@@ -21,53 +21,131 @@ Reads exclude trashed (soft-deleted) cases. Writes require the dry-run flow.
 ## Requirements
 
 - **Node.js ≥ 18** (for `npx` and the global `fetch`).
-- **Git read access** to `JoinFullStackDev/TCM` — the package is distributed by **git URL, not published to npm**. On headless hosts (OpenClaw/Torque) a git token must be present in the environment.
-- A reachable **TCM instance URL** and an **auth credential** (below).
+- **Git read access** to `JoinFullStackDev/tcm-mcp` — the package is distributed by **git URL, not published to npm**. On headless hosts (OpenClaw/Torque) a git token must be present in the environment.
+- That's it for the TCM URL: it **defaults to production** (`https://tcm-ochre.vercel.app`), so there's nothing to look up or set. You just need to authenticate ([Quickstart](#quickstart-2-steps)).
 
 Because it's distributed by git URL, `npx` clones the repo and **builds from source on first run** (via the package's `prepare` → `tsc` step), so the first launch is slower. Subsequent runs are cached.
 
-## Install (Claude Code)
+## Quickstart
 
-Add an entry to your `.mcp.json` (project-level, or `~/.claude/.mcp.json`). Interactive / user-token setup:
+Zero-config: the production TCM instance (`https://tcm-ochre.vercel.app`) is **baked in as the default**, so you never set `TCM_BASE_URL`. Point at a different instance only if you self-host (see [Environment variables](#environment-variables)).
+
+**Prerequisite — git access.** This package is fetched by git URL from a **private** repo, so the machine running it needs git read access (`gh auth login`, or a git token for headless hosts). Node ≥ 18 must be installed. On macOS, GUI-launched Claude Desktop may not see your shell `PATH` — if the server fails to start, use an absolute path to `npx` in the config (find it with `which npx`).
+
+### 1. Register the server
+
+**Claude Code** — one command, nothing to edit by hand:
+
+```bash
+claude mcp add tcm --scope user -- npx --yes github:JoinFullStackDev/tcm-mcp#v1.1.0 --stdio
+```
+
+`--scope user` makes it available in every project. (Drop it to scope to the current project; Claude Code writes the `.mcp.json` for you.)
+
+**Claude Desktop** — no CLI, so add it to the config file once:
+
+1. **Settings → Developer → Edit Config** — this creates and opens `claude_desktop_config.json` for you (no folder to make yourself):
+   - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+2. Add the `tcm` entry (merge into `mcpServers` if it already exists), then fully **quit + reopen** Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "tcm": {
+      "command": "npx",
+      "args": ["--yes", "github:JoinFullStackDev/tcm-mcp#v1.1.0", "--stdio"]
+    }
+  }
+}
+```
+
+> **Pin to a tag** (`#v1.1.0`), **not a branch** — a branch ref re-resolves on every launch and can trip the 30 s MCP startup timeout. No `env` block is needed.
+
+### 2. Sign in
+
+The server starts even before you've logged in — it just exposes a **`login` tool**. So the easiest way (works in Claude Desktop **and** Claude Code, no terminal):
+
+> **Just ask Claude:** _"Log me into TCM."_
+
+Claude calls the `login` tool, a browser opens once for Google sign-in, and the server stores a session it then keeps refreshed. The other tools light up immediately after. (Playwright is auto-installed on first login — a one-time ~100 MB browser download into `~/.tcm-mcp`.)
+
+Prefer a terminal? Same thing, run once:
+
+```bash
+npx --yes github:JoinFullStackDev/tcm-mcp#v1.1.0 login
+```
+
+Details: [Auto-refreshing login](#auto-refreshing-login-recommended).
+
+<details>
+<summary>Manual <code>.mcp.json</code> / legacy static-token setup</summary>
+
+If you'd rather edit `.mcp.json` directly (Claude Code project or `~/.claude/.mcp.json`), the minimal entry is just `command` + `args` as shown above. To use the **legacy static-token** mode instead of a login session (e.g. CI that already has a JWT), add an env block — note it **expires ~1h** and refreshing it needs a full client restart:
 
 ```jsonc
 {
   "mcpServers": {
     "tcm": {
       "command": "npx",
-      "args": ["--yes", "github:JoinFullStackDev/tcm-mcp#v1.0.0", "--stdio"],
-      "env": {
-        "TCM_BASE_URL": "https://your-tcm-instance.example.com",
-        "TCM_USER_TOKEN": "${TCM_USER_TOKEN}",
-      },
+      "args": ["--yes", "github:JoinFullStackDev/tcm-mcp#v1.1.0", "--stdio"],
+      "env": { "TCM_USER_TOKEN": "${TCM_USER_TOKEN}" },
     },
   },
 }
 ```
 
-> **Pin to a tag or commit** (`#v1.0.0`), **not a branch** — a branch ref re-resolves on every launch and can trip Claude Code's 30s MCP startup timeout. Set `TCM_BASE_URL` to your real TCM instance, not a preview alias. `TCM_USER_TOKEN` must be present in the environment that launches your MCP client (it's passed to the server as `${TCM_USER_TOKEN}`); a Supabase JWT expires ~1h — see below.
+</details>
 
 ## Auth modes
 
-The server picks its mode from environment variables. **If both are set, `CLUTCH_API_KEY` wins** (it is checked first).
+The server resolves its mode at startup. **Precedence: `CLUTCH_API_KEY` → login session file → `TCM_USER_TOKEN`.**
 
-| Mode                         | Set              | Sends                         | Use for                        | Attribution                                   |
-| ---------------------------- | ---------------- | ----------------------------- | ------------------------------ | --------------------------------------------- |
-| **User token** (interactive) | `TCM_USER_TOKEN` | `Authorization: Bearer <jwt>` | Claude Code, human in the loop | The real user (their Supabase JWT)            |
-| **Clutch key** (headless)    | `CLUTCH_API_KEY` | `X-Clutch-Key`                | Torque via Clutch/OpenClaw     | The service profile — see `MCP_AGENT_USER_ID` |
+| Mode                               | Selected by                      | Sends                         | Use for                        | Attribution                                   |
+| ---------------------------------- | -------------------------------- | ----------------------------- | ------------------------------ | --------------------------------------------- |
+| **Refreshing token** (interactive) | a session file (`npm run login`) | `Authorization: Bearer <jwt>` | Claude Code, human in the loop | The real user (their Supabase session)        |
+| **Static token** (legacy)          | `TCM_USER_TOKEN`                 | `Authorization: Bearer <jwt>` | CI / scripts injecting a JWT   | The real user (their Supabase JWT)            |
+| **Clutch key** (headless)          | `CLUTCH_API_KEY`                 | `X-Clutch-Key`                | Torque via Clutch/OpenClaw     | The service profile — see `MCP_AGENT_USER_ID` |
+
+In **refreshing** mode the server auto-renews the access token before expiry and again on any `401` (retrying the request once), and persists the rotated refresh token back to the session file. In **static** and **clutch** modes a `401` is terminal (nothing to refresh).
 
 In **headless** mode you **must** also set `MCP_AGENT_USER_ID`, or `create`/`update` will fail on the `created_by`/`updated_by` NOT NULL constraint. The server prints a startup warning if it's missing.
 
+## Auto-refreshing login (recommended)
+
+The login helper signs you into TCM in a browser once and writes a **session file** the server then uses to keep itself authenticated indefinitely — no `~1h` token churn, no client restarts.
+
+```bash
+# no clone needed — runs straight from the git URL:
+npx --yes github:JoinFullStackDev/tcm-mcp#v1.1.0 login
+
+# ...or, from a local clone of this repo:
+npm run login
+```
+
+- Opens a browser **only** if there's no valid saved session; later runs refresh silently (headless, no window).
+- **Playwright is installed for you on first login.** It is deliberately _not_ a server dependency (keeps `npx <server>` installs lean ~50 MB), so the login helper installs `playwright` + Chromium once into `~/.tcm-mcp` (a ~100 MB one-time download) if they aren't already present. You do **not** need a separate "Playwright MCP" — the login is fully self-contained.
+
+It writes `~/.tcm-mcp/session.json` (mode `0600`) containing the Supabase project URL, anon key (public), and the access + **refresh** tokens. From then on the MCP server (mode “refreshing token”) mints fresh access tokens on demand.
+
+- **Session file location:** `~/.tcm-mcp/session.json`, override with `TCM_SESSION_FILE`.
+- **Browser profile:** `~/.tcm-mcp/browser`, override with `TCM_BROWSER_PROFILE`.
+- **Security:** the refresh token is a long-lived credential — the file is `0600` and must never be committed or shared. Supabase rotates the refresh token on every refresh; the server persists the new one atomically.
+- **When it expires:** if the refresh token is ever revoked/expired, tool calls fail with a clear “run `npm run login`” message. Re-run the helper.
+- **Anon key capture:** the helper sniffs the public `apikey` header from Supabase network traffic. If capture ever fails, set `SUPABASE_ANON_KEY` (safe to expose) and re-run.
+
 ## Environment variables
 
-| Variable            | Required                         | Mode     | Purpose                                                                        |
-| ------------------- | -------------------------------- | -------- | ------------------------------------------------------------------------------ |
-| `TCM_BASE_URL`      | **yes**                          | both     | Base URL of the TCM instance (trailing slash optional).                        |
-| `TCM_USER_TOKEN`    | one of these two                 | user     | User's Supabase JWT.                                                           |
-| `CLUTCH_API_KEY`    | one of these two                 | headless | Server-to-server key; must match TCM's `CLUTCH_API_KEY`.                       |
-| `MCP_AGENT_USER_ID` | yes, in headless mode for writes | headless | `profiles.id` UUID of the Clutch Agent service profile, for write attribution. |
+| Variable              | Required                         | Mode       | Purpose                                                                                                                          |
+| --------------------- | -------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `TCM_BASE_URL`        | no (defaults to production)      | all        | Base URL of the TCM instance. Defaults to `https://tcm-ochre.vercel.app`; set only to point at a preview / self-hosted instance. |
+| `TCM_SESSION_FILE`    | no                               | refreshing | Override the session-file path (default `~/.tcm-mcp/session.json`).                                                              |
+| `TCM_BROWSER_PROFILE` | no                               | refreshing | Override the login browser-profile dir (default `~/.tcm-mcp/browser`).                                                           |
+| `TCM_USER_TOKEN`      | one credential                   | static     | User's Supabase JWT (legacy; expires ~1h, no refresh).                                                                           |
+| `CLUTCH_API_KEY`      | one credential                   | headless   | Server-to-server key; must match TCM's `CLUTCH_API_KEY`.                                                                         |
+| `MCP_AGENT_USER_ID`   | yes, in headless mode for writes | headless   | `profiles.id` UUID of the Clutch Agent service profile, for write attribution.                                                   |
 
-Getting a **`TCM_USER_TOKEN`**: it's your TCM Supabase session JWT — obtained by signing into TCM in a browser (or via the Playwright login flow) and reading the Supabase access token.
+The recommended credential is the **login session file** (`npm run login`), not `TCM_USER_TOKEN` — see [Auto-refreshing login](#auto-refreshing-login-recommended). `TCM_USER_TOKEN` remains for CI / scripts that already have a JWT.
 
 ## The write safety flow (dry-run → approval → commit)
 

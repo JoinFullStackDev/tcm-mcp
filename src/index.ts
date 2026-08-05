@@ -18,7 +18,7 @@
  * Auth (OQ-2):
  *   CLUTCH_API_KEY   → X-Clutch-Key (headless/Torque path)
  *   TCM_USER_TOKEN   → Authorization: Bearer (interactive/Claude Code path)
- *   TCM_BASE_URL     → required
+ *   TCM_BASE_URL     → optional (defaults to the production TCM instance)
  *
  * Distribution: git URL, no npm publish. Pin by tag/commit for reproducibility.
  * See .mcp.json at repo root for Claude Code configuration.
@@ -35,6 +35,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 
 import { resolveAuthConfig } from './auth.js';
+import { SessionExpiredError } from './token-provider.js';
 import { TcmClient } from './client.js';
 import { searchSuite } from './tools/search_suite.js';
 import { listTestCases } from './tools/list_test_cases.js';
@@ -219,22 +220,51 @@ const TOOLS: Tool[] = [
   },
 ];
 
+const LOGIN_TOOL: Tool = {
+  name: 'login',
+  description:
+    'Sign in to TCM. Opens a browser once for Google sign-in and stores a session that ' +
+    'the server keeps refreshed. Call this if other tools report that you are not signed in. ' +
+    'Takes up to a couple of minutes while you complete the browser login.',
+  inputSchema: { type: 'object' as const, properties: {}, required: [] },
+};
+
 // ─── Server bootstrap ─────────────────────────────────────────────────────────
 
 async function main() {
   const auth = resolveAuthConfig();
   const tcmClient = new TcmClient(auth);
 
-  console.error(`[tcm-mcp] Starting. Mode: ${auth.mode}. Base URL: ${auth.baseUrl}`);
+  // Prime credentials at startup so we can report auth state — but do NOT exit when there
+  // is no session yet: boot degraded so the `login` tool stays reachable (Claude Desktop
+  // can't run a terminal command). Real tool calls return a clear "not signed in" error.
+  let authed = true;
+  try {
+    await auth.headers();
+  } catch (err) {
+    if (err instanceof SessionExpiredError) {
+      authed = false;
+    } else {
+      throw err;
+    }
+  }
+
+  console.error(
+    `[tcm-mcp] Starting. Mode: ${auth.mode}. Base URL: ${auth.baseUrl}.` +
+      (authed ? '' : ' Not signed in yet — call the `login` tool.'),
+  );
 
   const server = new Server(
-    { name: 'tcm-mcp', version: '1.0.0' },
+    { name: 'tcm-mcp', version: '1.1.0' },
     { capabilities: { tools: {} } },
   );
 
+  // Headless (clutch) callers don't need the interactive login tool; everyone else gets it.
+  const toolList = auth.mode === 'clutch-key' ? TOOLS : [...TOOLS, LOGIN_TOOL];
+
   // List tools
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: TOOLS,
+    tools: toolList,
   }));
 
   // Handle tool calls
@@ -249,45 +279,57 @@ async function main() {
 
     let result: unknown;
 
-    switch (name) {
-      case 'search_suite':
-        result = await searchSuite(tcmClient, input as Parameters<typeof searchSuite>[1]);
-        break;
+    try {
+      switch (name) {
+        case 'search_suite':
+          result = await searchSuite(tcmClient, input as Parameters<typeof searchSuite>[1]);
+          break;
 
-      case 'list_test_cases':
-        result = await listTestCases(tcmClient, input as Parameters<typeof listTestCases>[1]);
-        break;
+        case 'list_test_cases':
+          result = await listTestCases(tcmClient, input as Parameters<typeof listTestCases>[1]);
+          break;
 
-      case 'get_test_case':
-        result = await getTestCase(tcmClient, input as Parameters<typeof getTestCase>[1]);
-        break;
+        case 'get_test_case':
+          result = await getTestCase(tcmClient, input as Parameters<typeof getTestCase>[1]);
+          break;
 
-      case 'create_test_case':
-        result = await createTestCase(
-          tcmClient,
-          input as Parameters<typeof createTestCase>[1],
-          correlationId,
-        );
-        break;
+        case 'create_test_case':
+          result = await createTestCase(
+            tcmClient,
+            input as Parameters<typeof createTestCase>[1],
+            correlationId,
+          );
+          break;
 
-      case 'update_test_case':
-        result = await updateTestCase(
-          tcmClient,
-          input as Parameters<typeof updateTestCase>[1],
-          correlationId,
-        );
-        break;
+        case 'update_test_case':
+          result = await updateTestCase(
+            tcmClient,
+            input as Parameters<typeof updateTestCase>[1],
+            correlationId,
+          );
+          break;
 
-      default:
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({ error: { code: 'NOT_FOUND', message: `Unknown tool: ${name}` } }),
-            },
-          ],
-          isError: true,
-        };
+        case 'login':
+          result = await handleLoginTool(tcmClient);
+          break;
+
+        default:
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify({ error: { code: 'NOT_FOUND', message: `Unknown tool: ${name}` } }),
+              },
+            ],
+            isError: true,
+          };
+      }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        result = { error: { code: 'NOT_AUTHENTICATED', message: (err as Error).message } };
+      } else {
+        throw err;
+      }
     }
 
     const isError =
@@ -313,7 +355,76 @@ async function main() {
   console.error('[tcm-mcp] Ready. Listening on stdio.');
 }
 
-main().catch((err) => {
-  console.error('[tcm-mcp] Fatal error:', err);
-  process.exit(1);
-});
+/**
+ * `login` subcommand: `npx github:JoinFullStackDev/tcm-mcp login` runs the interactive
+ * login helper (scripts/login.mjs) without the user cloning the repo. It's a separate
+ * process so Playwright (a dev-only, on-demand dependency) never loads in the server.
+ */
+function runLogin(): void {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { spawnSync } = require('node:child_process');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const nodePath = require('node:path');
+  const script = nodePath.join(__dirname, '..', 'scripts', 'login.mjs');
+  const res = spawnSync(process.execPath, [script], { stdio: 'inherit', env: process.env });
+  process.exit(res.status ?? 1);
+}
+
+/** Run the login helper as a child process and capture its result (for the `login` tool). */
+function runLoginProcess(): Promise<{ ok: boolean; message: string }> {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { spawn } = require('node:child_process');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const nodePath = require('node:path');
+  const script = nodePath.join(__dirname, '..', 'scripts', 'login.mjs');
+  // GUI-launched clients (e.g. Claude Desktop on macOS) don't inherit the shell PATH, so
+  // prepend node's own bin dir to help npm / npx / git resolve for the login helper.
+  const binDir = nodePath.dirname(process.execPath);
+  const env = {
+    ...process.env,
+    PATH: `${binDir}${nodePath.delimiter}${process.env.PATH ?? ''}`,
+  };
+  return new Promise((resolve) => {
+    let stderr = '';
+    const child = spawn(process.execPath, [script], { env });
+    child.stderr?.on('data', (d: Buffer) => {
+      stderr += d.toString();
+    });
+    child.on('error', (e: Error) =>
+      resolve({ ok: false, message: `Failed to start login: ${e.message}` }),
+    );
+    child.on('close', (code: number | null) => {
+      const tail = stderr.trim().split('\n').slice(-8).join('\n');
+      resolve({ ok: code === 0, message: tail });
+    });
+  });
+}
+
+/** `login` tool handler: run the browser login, then swap in the refreshing provider. */
+async function handleLoginTool(client: TcmClient): Promise<unknown> {
+  const outcome = await runLoginProcess();
+  if (!outcome.ok) {
+    return {
+      error: {
+        code: 'LOGIN_FAILED',
+        message: outcome.message || 'Login did not complete.',
+      },
+    };
+  }
+  // The session file now exists — re-resolve auth and swap it into the live client.
+  client.setAuth(resolveAuthConfig());
+  return {
+    ok: true,
+    message: 'Signed in to TCM. All tools are now available.',
+    detail: outcome.message,
+  };
+}
+
+if (process.argv.slice(2).includes('login')) {
+  runLogin();
+} else {
+  main().catch((err) => {
+    console.error('[tcm-mcp] Fatal error:', err);
+    process.exit(1);
+  });
+}
