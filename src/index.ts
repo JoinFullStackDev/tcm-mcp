@@ -10,6 +10,7 @@
  *
  * Tools:
  *   search_suite     — resolve a suite name/prefix to a suite reference
+ *   list_projects    — discover visible projects (id + name)
  *   list_test_cases  — filterable lightweight list
  *   get_test_case    — full detail with steps
  *   create_test_case — dry-run → approval → commit create
@@ -42,6 +43,7 @@ import { listTestCases } from './tools/list_test_cases.js';
 import { getTestCase } from './tools/get_test_case.js';
 import { createTestCase } from './tools/create_test_case.js';
 import { updateTestCase } from './tools/update_test_case.js';
+import { listProjects } from './tools/list_projects.js';
 
 // ─── Tool definitions ─────────────────────────────────────────────────────────
 
@@ -57,14 +59,20 @@ const TOOLS: Tool[] = [
       properties: {
         project_id: {
           type: 'string',
-          description: 'Project UUID. Scopes the search (prefix is only unique per project).',
+          description: 'Project UUID. Provide this OR project_name (exactly one).',
+        },
+        project_name: {
+          type: 'string',
+          description:
+            'Project name (case-insensitive exact match) as an alternative to project_id. ' +
+            'Resolved to a UUID via list_projects; ambiguous/unknown names return an error.',
         },
         name_or_prefix: {
           type: 'string',
           description: 'Suite name or prefix to search (case-insensitive, substring match).',
         },
       },
-      required: ['project_id', 'name_or_prefix'],
+      required: ['name_or_prefix'],
     },
   },
   {
@@ -76,6 +84,7 @@ const TOOLS: Tool[] = [
       type: 'object' as const,
       properties: {
         project_id: { type: 'string', description: 'Filter by project UUID (joins through suite).' },
+        project_name: { type: 'string', description: 'Filter by project name (case-insensitive exact match) instead of project_id. Provide at most one of project_id / project_name.' },
         suite_id: { type: 'string', description: 'Filter by suite UUID.' },
         search: { type: 'string', description: 'ilike match on display_id or title.' },
         limit: { type: 'number', description: 'Max results (default 50, max 200).' },
@@ -97,6 +106,21 @@ const TOOLS: Tool[] = [
         },
       },
       required: ['display_id'],
+    },
+  },
+  {
+    name: 'list_projects',
+    description:
+      'List the projects you can see (project_id + name). ' +
+      'Call this to discover a project_id before search_suite or list_test_cases, ' +
+      'or to resolve a project by name. Default limit 50, max 200.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        search: { type: 'string', description: 'Case-insensitive filter on project name.' },
+        limit: { type: 'number', description: 'Max results (default 50, max 200).' },
+      },
+      required: [],
     },
   },
   {
@@ -255,7 +279,7 @@ async function main() {
   );
 
   const server = new Server(
-    { name: 'tcm-mcp', version: '1.1.0' },
+    { name: 'tcm-mcp', version: '1.2.0' },
     { capabilities: { tools: {} } },
   );
 
@@ -287,6 +311,10 @@ async function main() {
 
         case 'list_test_cases':
           result = await listTestCases(tcmClient, input as Parameters<typeof listTestCases>[1]);
+          break;
+
+        case 'list_projects':
+          result = await listProjects(tcmClient, input as Parameters<typeof listProjects>[1]);
           break;
 
         case 'get_test_case':
