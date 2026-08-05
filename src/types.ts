@@ -132,6 +132,24 @@ export interface UpdateDryRunResult {
   summary_markdown: string;
 }
 
+// ─── Project ──────────────────────────────────────────────────────────────────
+
+/** Lightweight project reference returned by list_projects (issue #3). */
+export interface ProjectRef {
+  project_id: string;
+  name: string;
+  /** Present only in the non-lean projection. */
+  suite_count?: number;
+  /** Present only in the non-lean projection. */
+  test_case_count?: number;
+}
+
+export interface ListProjectsResult {
+  items: ProjectRef[];
+  total: number;
+  has_more: boolean;
+}
+
 // ─── Error ────────────────────────────────────────────────────────────────────
 
 export type ErrorCode = 'NOT_FOUND' | 'AMBIGUOUS' | 'VALIDATION' | 'IN_CICD_LOCKED' | 'AUTH_ERROR' | 'SERVER_ERROR';

@@ -75,7 +75,7 @@ class NoAuthProvider implements AuthProvider {
 
   async headers(): Promise<Record<string, string>> {
     throw new SessionExpiredError(
-      '[tcm-mcp] Not signed in to TCM. Run the `login` tool (or `npx github:JoinFullStackDev/tcm-mcp#v1.1.0 login`) to sign in.',
+      '[tcm-mcp] Not signed in to TCM. Run the `login` tool (or `npx github:JoinFullStackDev/tcm-mcp#v1.2.0 login`) to sign in.',
     );
   }
 
