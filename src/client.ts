@@ -7,7 +7,7 @@
  * all happen inside TCM. (PRD §8, OQ-3 option 2.)
  */
 
-import type { AuthConfig } from './auth.js';
+import type { AuthProvider } from './auth.js';
 import crypto from 'crypto';
 
 export interface RequestOptions {
@@ -21,15 +21,17 @@ export interface RequestOptions {
 
 export class TcmClient {
   private readonly baseUrl: string;
-  private readonly defaultHeaders: Record<string, string>;
 
-  constructor(private readonly auth: AuthConfig) {
+  constructor(private readonly auth: AuthProvider) {
     this.baseUrl = auth.baseUrl;
-    this.defaultHeaders = { ...auth.headers };
   }
 
   /**
    * Make a request to TCM REST API.
+   *
+   * Auth headers come from the AuthProvider per call (so a refreshing token is always
+   * current). On a 401 the provider is given a chance to refresh the credential
+   * (handleUnauthorized); if it does, the request is retried exactly once.
    *
    * Never throws: a network-level failure (DNS, connection refused, TLS, timeout) is
    * returned as { ok: false, status: 0 } so callers surface a structured tool error
@@ -41,28 +43,19 @@ export class TcmClient {
     path: string,
     options: RequestOptions = {},
   ): Promise<{ ok: boolean; status: number; data: T }> {
-    const { method = 'GET', body, correlationId, intent } = options;
+    let res = await this.sendOnce(path, options);
+    if (res && res.status === 401 && (await this.auth.handleUnauthorized())) {
+      res = await this.sendOnce(path, options);
+    }
 
-    const headers: Record<string, string> = { ...this.defaultHeaders };
-    if (correlationId) headers['X-MCP-Correlation-Id'] = correlationId;
-    if (intent) headers['X-MCP-Intent'] = intent;
-
-    let res: Response;
-    try {
-      res = await fetch(`${this.baseUrl}${path}`, {
-        method,
-        headers,
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-        redirect: 'manual',
-      });
-    } catch {
+    if (!res) {
       // Network-level failure — surface as a non-ok result rather than throwing.
       return { ok: false, status: 0, data: null as unknown as T };
     }
 
     let data: T;
     try {
-      data = await res.json() as T;
+      data = (await res.json()) as T;
     } catch {
       data = null as unknown as T;
     }
@@ -70,18 +63,52 @@ export class TcmClient {
     return { ok: res.ok, status: res.status, data };
   }
 
+  /** Single fetch attempt. Returns null on a network-level failure. */
+  private async sendOnce(
+    path: string,
+    options: RequestOptions,
+  ): Promise<Response | null> {
+    const { method = 'GET', body, correlationId, intent } = options;
+
+    const headers: Record<string, string> = { ...(await this.auth.headers()) };
+    if (correlationId) headers['X-MCP-Correlation-Id'] = correlationId;
+    if (intent) headers['X-MCP-Intent'] = intent;
+
+    try {
+      return await fetch(`${this.baseUrl}${path}`, {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        redirect: 'manual',
+      });
+    } catch {
+      return null;
+    }
+  }
+
   /** GET convenience */
-  async get<T>(path: string, opts?: Omit<RequestOptions, 'method' | 'body'>): Promise<{ ok: boolean; status: number; data: T }> {
+  async get<T>(
+    path: string,
+    opts?: Omit<RequestOptions, 'method' | 'body'>,
+  ): Promise<{ ok: boolean; status: number; data: T }> {
     return this.request<T>(path, { ...opts, method: 'GET' });
   }
 
   /** POST convenience */
-  async post<T>(path: string, body: unknown, opts?: Omit<RequestOptions, 'method' | 'body'>): Promise<{ ok: boolean; status: number; data: T }> {
+  async post<T>(
+    path: string,
+    body: unknown,
+    opts?: Omit<RequestOptions, 'method' | 'body'>,
+  ): Promise<{ ok: boolean; status: number; data: T }> {
     return this.request<T>(path, { ...opts, method: 'POST', body });
   }
 
   /** PATCH convenience */
-  async patch<T>(path: string, body: unknown, opts?: Omit<RequestOptions, 'method' | 'body'>): Promise<{ ok: boolean; status: number; data: T }> {
+  async patch<T>(
+    path: string,
+    body: unknown,
+    opts?: Omit<RequestOptions, 'method' | 'body'>,
+  ): Promise<{ ok: boolean; status: number; data: T }> {
     return this.request<T>(path, { ...opts, method: 'PATCH', body });
   }
 }

@@ -1,38 +1,72 @@
 /**
- * auth.ts — Two-mode auth for the TCM MCP server (PRD §9.1, OQ-2).
+ * auth.ts — Auth for the TCM MCP server (PRD §9.1, OQ-2; issue #1).
  *
- * Mode 1 — Clutch/headless path (Torque via OpenClaw):
- *   CLUTCH_API_KEY env var → sends X-Clutch-Key on every proxied request.
- *   Handled server-side by withAgentAuth() in TCM.
+ * Three modes, resolved from the environment / session file:
  *
- * Mode 2 — User/interactive path (Claude Code):
- *   TCM_USER_TOKEN env var → sends Authorization: Bearer <token>.
- *   Token is the user's Supabase JWT (from Playwright login or direct sign-in).
+ * Mode 1 — Clutch/headless (Torque via OpenClaw):
+ *   CLUTCH_API_KEY → X-Clutch-Key on every proxied request.
+ *   Validated server-side by withAgentAuth() in TCM. Static; never refreshes.
  *
- * TCM_BASE_URL is required in both modes.
+ * Mode 2 — Refreshing user token (issue #1, preferred for Claude Code):
+ *   A session file (default ~/.tcm-mcp/session.json, from `npm run login`) holds the
+ *   Supabase refresh token. The server mints fresh access JWTs on demand and on 401,
+ *   so there is no ~1h manual re-auth + Claude Code restart. See token-provider.ts.
+ *
+ * Mode 3 — Static user token (back-compat):
+ *   TCM_USER_TOKEN → Authorization: Bearer <token>. A single Supabase JWT that
+ *   expires (~1h); superseded by mode 2 but kept for scripts / CI that inject a token.
+ *
+ * TCM_BASE_URL is required in every mode.
+ *
+ * Precedence: CLUTCH_API_KEY → session file present → TCM_USER_TOKEN → exit(1).
  */
 
-export type AuthMode = 'clutch-key' | 'user-token';
+import { resolveBaseUrl } from './config.js';
+import {
+  defaultSessionFile,
+  RefreshingTokenProvider,
+  sessionFileExists,
+} from './token-provider.js';
 
-export interface AuthConfig {
-  mode: AuthMode;
-  baseUrl: string;
-  headers: Record<string, string>;
+export type AuthMode = 'clutch-key' | 'user-token' | 'user-refresh';
+
+/**
+ * An auth strategy. `headers()` returns the per-request auth headers (and may refresh
+ * an expiring credential first); `handleUnauthorized()` is called after a 401 and
+ * returns true if the credential was refreshed and the request should be retried once.
+ */
+export interface AuthProvider {
+  readonly mode: AuthMode;
+  readonly baseUrl: string;
+  headers(): Promise<Record<string, string>>;
+  handleUnauthorized(): Promise<boolean>;
+}
+
+/** Static-header provider for credentials that never refresh (clutch key, static JWT). */
+class StaticAuthProvider implements AuthProvider {
+  constructor(
+    readonly mode: AuthMode,
+    readonly baseUrl: string,
+    private readonly staticHeaders: Record<string, string>,
+  ) {}
+
+  async headers(): Promise<Record<string, string>> {
+    return { ...this.staticHeaders };
+  }
+
+  async handleUnauthorized(): Promise<boolean> {
+    // Nothing to refresh — a 401 here is terminal.
+    return false;
+  }
 }
 
 /**
- * Resolve auth configuration from environment variables.
- * Exits with a clear error if neither auth var is set, or if TCM_BASE_URL is missing.
+ * Resolve an auth provider from the environment.
+ * Exits with a clear error if no usable credential is found, or if TCM_BASE_URL is missing.
  */
-export function resolveAuthConfig(): AuthConfig {
-  const baseUrl = process.env.TCM_BASE_URL?.replace(/\/$/, '');
-  if (!baseUrl) {
-    console.error(
-      '[tcm-mcp] ERROR: TCM_BASE_URL is not set.\n' +
-      '  Set TCM_BASE_URL to your TCM instance (e.g. https://tcm-ochre.vercel.app).',
-    );
-    process.exit(1);
-  }
+export function resolveAuthConfig(): AuthProvider {
+  // Defaults to the production TCM instance; override with TCM_BASE_URL. Never missing.
+  const baseUrl = resolveBaseUrl();
 
   const clutchKey = process.env.CLUTCH_API_KEY;
   const userToken = process.env.TCM_USER_TOKEN;
@@ -43,37 +77,37 @@ export function resolveAuthConfig(): AuthConfig {
     if (!process.env.MCP_AGENT_USER_ID) {
       console.warn(
         '[tcm-mcp] WARNING: MCP_AGENT_USER_ID is not set — create/update calls will fail with NOT NULL constraint on created_by.\n' +
-        '  Set MCP_AGENT_USER_ID to the UUID of the Clutch Agent service profile row in the profiles table.',
+          '  Set MCP_AGENT_USER_ID to the UUID of the Clutch Agent service profile row in the profiles table.',
       );
     }
-    return {
-      mode: 'clutch-key',
-      baseUrl,
-      headers: {
-        'Content-Type': 'application/json',
-        // X-Clutch-Key: validated by withAgentAuth() in TCM (non-constant-time compare
-        // is a known minor weakness flagged in OQ-2; hardening is deferred to v2).
-        'X-Clutch-Key': clutchKey,
-      },
-    };
+    return new StaticAuthProvider('clutch-key', baseUrl, {
+      'Content-Type': 'application/json',
+      // X-Clutch-Key: validated by withAgentAuth() in TCM (non-constant-time compare
+      // is a known minor weakness flagged in OQ-2; hardening is deferred to v2).
+      'X-Clutch-Key': clutchKey,
+    });
   }
 
+  // Preferred interactive path: a login session with a refresh token (issue #1).
+  const sessionFile = defaultSessionFile();
+  if (sessionFileExists(sessionFile)) {
+    return RefreshingTokenProvider.load(sessionFile);
+  }
+
+  // Back-compat: a single static JWT injected via env (expires ~1h, no refresh).
   if (userToken) {
-    return {
-      mode: 'user-token',
-      baseUrl,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${userToken}`,
-      },
-    };
+    return new StaticAuthProvider('user-token', baseUrl, {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    });
   }
 
   console.error(
     '[tcm-mcp] ERROR: No auth credentials found.\n' +
-    '  Set one of:\n' +
-    '    CLUTCH_API_KEY — for headless agent use (Torque via Clutch/OpenClaw)\n' +
-    '    TCM_USER_TOKEN — for interactive use (Claude Code / user JWT)',
+      '  Set one of:\n' +
+      '    CLUTCH_API_KEY — for headless agent use (Torque via Clutch/OpenClaw)\n' +
+      '    a login session — run `npm run login` (auto-refreshing user token, recommended)\n' +
+      '    TCM_USER_TOKEN — a single static Supabase JWT (expires ~1h, no refresh)',
   );
   process.exit(1);
 }

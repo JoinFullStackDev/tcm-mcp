@@ -18,7 +18,7 @@
  * Auth (OQ-2):
  *   CLUTCH_API_KEY   → X-Clutch-Key (headless/Torque path)
  *   TCM_USER_TOKEN   → Authorization: Bearer (interactive/Claude Code path)
- *   TCM_BASE_URL     → required
+ *   TCM_BASE_URL     → optional (defaults to the production TCM instance)
  *
  * Distribution: git URL, no npm publish. Pin by tag/commit for reproducibility.
  * See .mcp.json at repo root for Claude Code configuration.
@@ -35,6 +35,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 
 import { resolveAuthConfig } from './auth.js';
+import { SessionExpiredError } from './token-provider.js';
 import { TcmClient } from './client.js';
 import { searchSuite } from './tools/search_suite.js';
 import { listTestCases } from './tools/list_test_cases.js';
@@ -225,10 +226,22 @@ async function main() {
   const auth = resolveAuthConfig();
   const tcmClient = new TcmClient(auth);
 
+  // Prime credentials once at startup: fail fast with actionable guidance (e.g. an
+  // expired login session) instead of surfacing an opaque 401 on the first tool call.
+  try {
+    await auth.headers();
+  } catch (err) {
+    if (err instanceof SessionExpiredError) {
+      console.error(err.message);
+      process.exit(1);
+    }
+    throw err;
+  }
+
   console.error(`[tcm-mcp] Starting. Mode: ${auth.mode}. Base URL: ${auth.baseUrl}`);
 
   const server = new Server(
-    { name: 'tcm-mcp', version: '1.0.0' },
+    { name: 'tcm-mcp', version: '1.1.0' },
     { capabilities: { tools: {} } },
   );
 
@@ -313,7 +326,26 @@ async function main() {
   console.error('[tcm-mcp] Ready. Listening on stdio.');
 }
 
-main().catch((err) => {
-  console.error('[tcm-mcp] Fatal error:', err);
-  process.exit(1);
-});
+/**
+ * `login` subcommand: `npx github:JoinFullStackDev/tcm-mcp login` runs the interactive
+ * login helper (scripts/login.mjs) without the user cloning the repo. It's a separate
+ * process so Playwright (a dev-only, on-demand dependency) never loads in the server.
+ */
+function runLogin(): void {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { spawnSync } = require('node:child_process');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const nodePath = require('node:path');
+  const script = nodePath.join(__dirname, '..', 'scripts', 'login.mjs');
+  const res = spawnSync(process.execPath, [script], { stdio: 'inherit', env: process.env });
+  process.exit(res.status ?? 1);
+}
+
+if (process.argv.slice(2).includes('login')) {
+  runLogin();
+} else {
+  main().catch((err) => {
+    console.error('[tcm-mcp] Fatal error:', err);
+    process.exit(1);
+  });
+}
