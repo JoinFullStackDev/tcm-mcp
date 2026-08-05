@@ -26,34 +26,28 @@ Reads exclude trashed (soft-deleted) cases. Writes require the dry-run flow.
 
 Because it's distributed by git URL, `npx` clones the repo and **builds from source on first run** (via the package's `prepare` → `tsc` step), so the first launch is slower. Subsequent runs are cached.
 
-## Quickstart (2 steps)
+## Quickstart
 
-The production TCM instance (`https://tcm-ochre.vercel.app`) is **baked in as the default**, so you do **not** need to set `TCM_BASE_URL` — a fresh install just works. Point at a different instance only if you self-host (see [Environment variables](#environment-variables)).
+Zero-config: the production TCM instance (`https://tcm-ochre.vercel.app`) is **baked in as the default**, so you never set `TCM_BASE_URL`. Point at a different instance only if you self-host (see [Environment variables](#environment-variables)).
 
-### 1. Log in (one-time)
+**Prerequisite — git access.** This package is fetched by git URL from a **private** repo, so the machine running it needs git read access (`gh auth login`, or a git token for headless hosts). Node ≥ 18 must be installed. On macOS, GUI-launched Claude Desktop may not see your shell `PATH` — if the server fails to start, use an absolute path to `npx` in the config (find it with `which npx`).
 
-```bash
-npx --yes github:JoinFullStackDev/tcm-mcp#v1.1.0 login
-```
+### 1. Register the server
 
-This opens a browser once, you sign in with Google, and it writes a session file the server uses to keep itself authenticated indefinitely. **Playwright is installed automatically** if it's missing (a one-time ~100 MB browser download into `~/.tcm-mcp`) — nothing to set up first. Re-runs refresh silently with no browser window. Details: [Auto-refreshing login](#auto-refreshing-login-recommended).
-
-### 2. Register the server
-
-**Claude Code** — one command, no files to create by hand:
+**Claude Code** — one command, nothing to edit by hand:
 
 ```bash
 claude mcp add tcm --scope user -- npx --yes github:JoinFullStackDev/tcm-mcp#v1.1.0 --stdio
 ```
 
-`--scope user` makes it available in every project. That's it — restart Claude Code and the `tcm` tools are live. (To scope it to one project instead, drop `--scope user`; Claude Code writes a `.mcp.json` in the current directory for you.)
+`--scope user` makes it available in every project. (Drop it to scope to the current project; Claude Code writes the `.mcp.json` for you.)
 
-**Claude Desktop** — it has no CLI, so add the server to its config file:
+**Claude Desktop** — no CLI, so add it to the config file once:
 
-1. Open **Claude Desktop → Settings → Developer → Edit Config**. This creates and opens `claude_desktop_config.json` for you (no need to make the folder yourself):
+1. **Settings → Developer → Edit Config** — this creates and opens `claude_desktop_config.json` for you (no folder to make yourself):
    - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
    - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
-2. Add the `tcm` entry (merge into `mcpServers` if the file already has one):
+2. Add the `tcm` entry (merge into `mcpServers` if it already exists), then fully **quit + reopen** Claude Desktop:
 
 ```json
 {
@@ -66,9 +60,23 @@ claude mcp add tcm --scope user -- npx --yes github:JoinFullStackDev/tcm-mcp#v1.
 }
 ```
 
-3. Save and fully **quit + reopen** Claude Desktop.
+> **Pin to a tag** (`#v1.1.0`), **not a branch** — a branch ref re-resolves on every launch and can trip the 30 s MCP startup timeout. No `env` block is needed.
 
-> **Pin to a tag** (`#v1.1.0`), **not a branch** — a branch ref re-resolves on every launch and can trip the 30 s MCP startup timeout. No `env` block is required; add one only to override `TCM_BASE_URL` or to use a different [auth mode](#auth-modes).
+### 2. Sign in
+
+The server starts even before you've logged in — it just exposes a **`login` tool**. So the easiest way (works in Claude Desktop **and** Claude Code, no terminal):
+
+> **Just ask Claude:** _"Log me into TCM."_
+
+Claude calls the `login` tool, a browser opens once for Google sign-in, and the server stores a session it then keeps refreshed. The other tools light up immediately after. (Playwright is auto-installed on first login — a one-time ~100 MB browser download into `~/.tcm-mcp`.)
+
+Prefer a terminal? Same thing, run once:
+
+```bash
+npx --yes github:JoinFullStackDev/tcm-mcp#v1.1.0 login
+```
+
+Details: [Auto-refreshing login](#auto-refreshing-login-recommended).
 
 <details>
 <summary>Manual <code>.mcp.json</code> / legacy static-token setup</summary>

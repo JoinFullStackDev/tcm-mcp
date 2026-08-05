@@ -16,19 +16,23 @@
  *   TCM_USER_TOKEN → Authorization: Bearer <token>. A single Supabase JWT that
  *   expires (~1h); superseded by mode 2 but kept for scripts / CI that inject a token.
  *
- * TCM_BASE_URL is required in every mode.
+ * TCM_BASE_URL defaults to the production instance (see config.ts); override to point
+ * elsewhere.
  *
- * Precedence: CLUTCH_API_KEY → session file present → TCM_USER_TOKEN → exit(1).
+ * Precedence: CLUTCH_API_KEY → session file present → TCM_USER_TOKEN → degraded
+ * `needs-login` mode (server still boots so the `login` tool is reachable).
  */
 
 import { resolveBaseUrl } from './config.js';
 import {
   defaultSessionFile,
   RefreshingTokenProvider,
+  SessionExpiredError,
   sessionFileExists,
 } from './token-provider.js';
 
-export type AuthMode = 'clutch-key' | 'user-token' | 'user-refresh';
+export type AuthMode =
+  'clutch-key' | 'user-token' | 'user-refresh' | 'needs-login';
 
 /**
  * An auth strategy. `headers()` returns the per-request auth headers (and may refresh
@@ -61,8 +65,28 @@ class StaticAuthProvider implements AuthProvider {
 }
 
 /**
- * Resolve an auth provider from the environment.
- * Exits with a clear error if no usable credential is found, or if TCM_BASE_URL is missing.
+ * Degraded provider used when there is no credential yet. The server still boots (so the
+ * `login` tool is reachable, e.g. in Claude Desktop) but any real request fails with a
+ * clear 'not logged in' error until a session is established and the provider is swapped.
+ */
+class NoAuthProvider implements AuthProvider {
+  readonly mode = 'needs-login' as const;
+  constructor(readonly baseUrl: string) {}
+
+  async headers(): Promise<Record<string, string>> {
+    throw new SessionExpiredError(
+      '[tcm-mcp] Not signed in to TCM. Run the `login` tool (or `npx github:JoinFullStackDev/tcm-mcp#v1.1.0 login`) to sign in.',
+    );
+  }
+
+  async handleUnauthorized(): Promise<boolean> {
+    return false;
+  }
+}
+
+/**
+ * Resolve an auth provider from the environment. Never throws / never exits: with no
+ * credential it returns a degraded NoAuthProvider so the `login` tool stays reachable.
  */
 export function resolveAuthConfig(): AuthProvider {
   // Defaults to the production TCM instance; override with TCM_BASE_URL. Never missing.
@@ -102,12 +126,7 @@ export function resolveAuthConfig(): AuthProvider {
     });
   }
 
-  console.error(
-    '[tcm-mcp] ERROR: No auth credentials found.\n' +
-      '  Set one of:\n' +
-      '    CLUTCH_API_KEY — for headless agent use (Torque via Clutch/OpenClaw)\n' +
-      '    a login session — run `npm run login` (auto-refreshing user token, recommended)\n' +
-      '    TCM_USER_TOKEN — a single static Supabase JWT (expires ~1h, no refresh)',
-  );
-  process.exit(1);
+  // No credential yet: boot in a degraded state so the `login` tool is still reachable
+  // (Claude Desktop can't run a terminal command). Real requests error until sign-in.
+  return new NoAuthProvider(baseUrl);
 }

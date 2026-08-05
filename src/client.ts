@@ -20,9 +20,15 @@ export interface RequestOptions {
 }
 
 export class TcmClient {
-  private readonly baseUrl: string;
+  private baseUrl: string;
 
-  constructor(private readonly auth: AuthProvider) {
+  constructor(private auth: AuthProvider) {
+    this.baseUrl = auth.baseUrl;
+  }
+
+  /** Swap the auth provider at runtime (e.g. after the `login` tool establishes a session). */
+  setAuth(auth: AuthProvider): void {
+    this.auth = auth;
     this.baseUrl = auth.baseUrl;
   }
 
