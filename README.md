@@ -40,7 +40,7 @@ Zero-config: the production TCM instance (`https://tcm-ochre.vercel.app`) is **b
 **Claude Code** — one command, nothing to edit by hand:
 
 ```bash
-claude mcp add tcm --scope user -- npx --yes github:JoinFullStackDev/tcm-mcp#v1.2.0 --stdio
+claude mcp add tcm --scope user -- npx --yes github:JoinFullStackDev/tcm-mcp#v1.3.0 --stdio
 ```
 
 `--scope user` makes it available in every project. (Drop it to scope to the current project; Claude Code writes the `.mcp.json` for you.)
@@ -57,13 +57,13 @@ claude mcp add tcm --scope user -- npx --yes github:JoinFullStackDev/tcm-mcp#v1.
   "mcpServers": {
     "tcm": {
       "command": "npx",
-      "args": ["--yes", "github:JoinFullStackDev/tcm-mcp#v1.2.0", "--stdio"]
+      "args": ["--yes", "github:JoinFullStackDev/tcm-mcp#v1.3.0", "--stdio"]
     }
   }
 }
 ```
 
-> **Pin to a tag** (`#v1.2.0`), **not a branch** — a branch ref re-resolves on every launch and can trip the 30 s MCP startup timeout. No `env` block is needed.
+> **Pin to a tag** (`#v1.3.0`), **not a branch** — a branch ref re-resolves on every launch and can trip the 30 s MCP startup timeout. No `env` block is needed.
 
 ### 2. Sign in
 
@@ -76,7 +76,7 @@ Claude calls the `login` tool, a browser opens once for Google sign-in, and the 
 Prefer a terminal? Same thing, run once:
 
 ```bash
-npx --yes github:JoinFullStackDev/tcm-mcp#v1.2.0 login
+npx --yes github:JoinFullStackDev/tcm-mcp#v1.3.0 login
 ```
 
 Details: [Auto-refreshing login](#auto-refreshing-login-recommended).
@@ -91,7 +91,7 @@ If you'd rather edit `.mcp.json` directly (Claude Code project or `~/.claude/.mc
   "mcpServers": {
     "tcm": {
       "command": "npx",
-      "args": ["--yes", "github:JoinFullStackDev/tcm-mcp#v1.2.0", "--stdio"],
+      "args": ["--yes", "github:JoinFullStackDev/tcm-mcp#v1.3.0", "--stdio"],
       "env": { "TCM_USER_TOKEN": "${TCM_USER_TOKEN}" },
     },
   },
@@ -112,7 +112,7 @@ The server resolves its mode at startup. **Precedence: `CLUTCH_API_KEY` → logi
 
 In **refreshing** mode the server auto-renews the access token before expiry and again on any `401` (retrying the request once), and persists the rotated refresh token back to the session file. In **static** and **clutch** modes a `401` is terminal (nothing to refresh).
 
-In **headless** mode you **must** also set `MCP_AGENT_USER_ID`, or `create`/`update` will fail on the `created_by`/`updated_by` NOT NULL constraint. The server prints a startup warning if it's missing.
+In **headless** mode you **must** also set `MCP_AGENT_USER_ID`, or `create`/`update` will fail on the `created_by`/`updated_by` NOT NULL constraint. The server prints a startup warning if it's missing. When set, the server forwards it to TCM as an `X-Agent-User-Id` header (trusted only alongside a valid `X-Clutch-Key`), so each agent attributes its own writes; TCM falls back to its own `MCP_AGENT_USER_ID` env if the header is absent. (Requires TCM with the matching write-attribution support.)
 
 ## Auto-refreshing login (recommended)
 
@@ -120,7 +120,7 @@ The login helper signs you into TCM in a browser once and writes a **session fil
 
 ```bash
 # no clone needed — runs straight from the git URL:
-npx --yes github:JoinFullStackDev/tcm-mcp#v1.2.0 login
+npx --yes github:JoinFullStackDev/tcm-mcp#v1.3.0 login
 
 # ...or, from a local clone of this repo:
 npm run login

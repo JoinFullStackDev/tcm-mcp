@@ -75,7 +75,7 @@ class NoAuthProvider implements AuthProvider {
 
   async headers(): Promise<Record<string, string>> {
     throw new SessionExpiredError(
-      '[tcm-mcp] Not signed in to TCM. Run the `login` tool (or `npx github:JoinFullStackDev/tcm-mcp#v1.2.0 login`) to sign in.',
+      '[tcm-mcp] Not signed in to TCM. Run the `login` tool (or `npx github:JoinFullStackDev/tcm-mcp#v1.3.0 login`) to sign in.',
     );
   }
 
@@ -104,12 +104,19 @@ export function resolveAuthConfig(): AuthProvider {
           '  Set MCP_AGENT_USER_ID to the UUID of the Clutch Agent service profile row in the profiles table.',
       );
     }
-    return new StaticAuthProvider('clutch-key', baseUrl, {
+    const clutchHeaders: Record<string, string> = {
       'Content-Type': 'application/json',
       // X-Clutch-Key: validated by withAgentAuth() in TCM (non-constant-time compare
       // is a known minor weakness flagged in OQ-2; hardening is deferred to v2).
       'X-Clutch-Key': clutchKey,
-    });
+    };
+    // Forward the agent identity so TCM can attribute created_by / updated_by on writes.
+    // TCM only trusts X-Agent-User-Id when it arrives alongside a valid X-Clutch-Key, and
+    // falls back to its own MCP_AGENT_USER_ID env if the header is absent.
+    if (process.env.MCP_AGENT_USER_ID) {
+      clutchHeaders['X-Agent-User-Id'] = process.env.MCP_AGENT_USER_ID;
+    }
+    return new StaticAuthProvider('clutch-key', baseUrl, clutchHeaders);
   }
 
   // Preferred interactive path: a login session with a refresh token (issue #1).

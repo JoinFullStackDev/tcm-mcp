@@ -279,7 +279,7 @@ async function main() {
   );
 
   const server = new Server(
-    { name: 'tcm-mcp', version: '1.2.0' },
+    { name: 'tcm-mcp', version: '1.3.0' },
     { capabilities: { tools: {} } },
   );
 
