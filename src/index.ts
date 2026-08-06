@@ -10,6 +10,7 @@
  *
  * Tools:
  *   search_suite     — resolve a suite name/prefix to a suite reference
+ *   list_suites      — enumerate every suite in a project (with group + test_case_count)
  *   list_projects    — discover visible projects (id + name)
  *   list_test_cases  — filterable lightweight list
  *   get_test_case    — full detail with steps
@@ -39,6 +40,7 @@ import { resolveAuthConfig } from './auth.js';
 import { SessionExpiredError } from './token-provider.js';
 import { TcmClient } from './client.js';
 import { searchSuite } from './tools/search_suite.js';
+import { listSuites } from './tools/list_suites.js';
 import { listTestCases } from './tools/list_test_cases.js';
 import { getTestCase } from './tools/get_test_case.js';
 import { createTestCase } from './tools/create_test_case.js';
@@ -53,7 +55,8 @@ const TOOLS: Tool[] = [
     description:
       'Resolve a suite name or prefix to a suite reference. ' +
       'Call this before create_test_case or list_test_cases to get the suite_id. ' +
-      'Returns all matches so the caller can disambiguate if >1.',
+      'Returns all matches so the caller can disambiguate if >1. ' +
+      'To enumerate every suite in a project (no search term), use list_suites instead.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -73,6 +76,30 @@ const TOOLS: Tool[] = [
         },
       },
       required: ['name_or_prefix'],
+    },
+  },
+  {
+    name: 'list_suites',
+    description:
+      'List every suite in a project (no search term). ' +
+      'Each suite includes suite_id, name, prefix, group (role label the TCM sidebar groups on), ' +
+      'and test_case_count. Provide project_id OR project_name (exactly one). ' +
+      'An empty project returns []. Use search_suite to resolve a single suite by name/prefix.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        project_id: {
+          type: 'string',
+          description: 'Project UUID. Provide this OR project_name (exactly one).',
+        },
+        project_name: {
+          type: 'string',
+          description:
+            'Project name (case-insensitive exact match) as an alternative to project_id. ' +
+            'Resolved to a UUID via list_projects; ambiguous/unknown names return an error.',
+        },
+      },
+      required: [],
     },
   },
   {
@@ -279,7 +306,7 @@ async function main() {
   );
 
   const server = new Server(
-    { name: 'tcm-mcp', version: '1.3.0' },
+    { name: 'tcm-mcp', version: '1.4.0' },
     { capabilities: { tools: {} } },
   );
 
@@ -307,6 +334,10 @@ async function main() {
       switch (name) {
         case 'search_suite':
           result = await searchSuite(tcmClient, input as Parameters<typeof searchSuite>[1]);
+          break;
+
+        case 'list_suites':
+          result = await listSuites(tcmClient, input as Parameters<typeof listSuites>[1]);
           break;
 
         case 'list_test_cases':

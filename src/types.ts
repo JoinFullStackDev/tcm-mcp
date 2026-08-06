@@ -7,7 +7,8 @@
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
 export type Priority = 'low' | 'medium' | 'high';
-export type AutomationStatus = 'not_automated' | 'scripted' | 'in_cicd' | 'out_of_sync';
+export type AutomationStatus =
+  'not_automated' | 'scripted' | 'in_cicd' | 'out_of_sync';
 export type PlatformTag = 'desktop' | 'tablet' | 'mobile';
 
 // ─── Suite ────────────────────────────────────────────────────────────────────
@@ -17,6 +18,10 @@ export interface SuiteRef {
   name: string;
   prefix: string;
   project_id: string;
+  /** Free-text role/group label (TCM sidebar groups on this). Nullable. */
+  group: string | null;
+  /** Active (non-trashed) test-case count for the suite, when the backend provides it. */
+  test_case_count?: number;
 }
 
 // ─── Steps ────────────────────────────────────────────────────────────────────
@@ -115,7 +120,9 @@ export interface ListTestCasesResult {
 /** Dry-run result for create. */
 export interface CreateDryRunResult {
   dry_run: true;
-  would_create: Omit<CreateTestCaseInput, 'dry_run'> & { steps: Array<StepInput & { step_number: number }> };
+  would_create: Omit<CreateTestCaseInput, 'dry_run'> & {
+    steps: Array<StepInput & { step_number: number }>;
+  };
   summary_markdown: string;
 }
 
@@ -152,7 +159,13 @@ export interface ListProjectsResult {
 
 // ─── Error ────────────────────────────────────────────────────────────────────
 
-export type ErrorCode = 'NOT_FOUND' | 'AMBIGUOUS' | 'VALIDATION' | 'IN_CICD_LOCKED' | 'AUTH_ERROR' | 'SERVER_ERROR';
+export type ErrorCode =
+  | 'NOT_FOUND'
+  | 'AMBIGUOUS'
+  | 'VALIDATION'
+  | 'IN_CICD_LOCKED'
+  | 'AUTH_ERROR'
+  | 'SERVER_ERROR';
 
 export interface McpError {
   error: {

@@ -8,18 +8,19 @@ Full design: [`docs/features/mcp-e1-test-case-crud.md`](https://github.com/JoinF
 
 ## Tools
 
-| Tool               | Purpose                                                                                                    |
-| ------------------ | ---------------------------------------------------------------------------------------------------------- |
-| `list_projects`    | Discover the projects you can see (`project_id` + `name`). Search by name; default 50, max 200.            |
-| `search_suite`     | Resolve a suite name/prefix → `suite_id` within a project (`project_id` **or** `project_name`).            |
-| `list_test_cases`  | Lightweight filterable list (`display_id`, `title`, `automation_status`, `priority`). Default 50, max 200. |
-| `get_test_case`    | Full detail + steps, by `display_id`.                                                                      |
-| `create_test_case` | Create a case with steps — **dry-run → approval → commit** (see below).                                    |
-| `update_test_case` | Partial update; steps are **full-replace** when provided — same dry-run flow.                              |
+| Tool               | Purpose                                                                                                              |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `list_projects`    | Discover the projects you can see (`project_id` + `name`). Search by name; default 50, max 200.                      |
+| `search_suite`     | Resolve a suite name/prefix → `suite_id` within a project (`project_id` **or** `project_name`).                      |
+| `list_suites`      | List **every** suite in a project — each with `suite_id`, `name`, `prefix`, `group` (role label), `test_case_count`. |
+| `list_test_cases`  | Lightweight filterable list (`display_id`, `title`, `automation_status`, `priority`). Default 50, max 200.           |
+| `get_test_case`    | Full detail + steps, by `display_id`.                                                                                |
+| `create_test_case` | Create a case with steps — **dry-run → approval → commit** (see below).                                              |
+| `update_test_case` | Partial update; steps are **full-replace** when provided — same dry-run flow.                                        |
 
 Reads exclude trashed (soft-deleted) cases. Writes require the dry-run flow.
 
-**Project scoping.** `search_suite` and `list_test_cases` scope by project. Pass a `project_id` (UUID) directly, or a `project_name` — the server resolves the name to an id via `list_projects` (case-insensitive exact match; an unknown name returns `NOT_FOUND` and an ambiguous one returns `AMBIGUOUS` with the candidate ids). Use `list_projects` first to discover ids. `list_test_cases` with no project returns cases across every project you can see.
+**Project scoping.** `search_suite`, `list_suites`, and `list_test_cases` scope by project. Pass a `project_id` (UUID) directly, or a `project_name` — the server resolves the name to an id via `list_projects` (case-insensitive exact match; an unknown name returns `NOT_FOUND` and an ambiguous one returns `AMBIGUOUS` with the candidate ids). Use `list_projects` first to discover ids. `list_test_cases` with no project returns cases across every project you can see.
 
 ## Requirements
 
@@ -40,7 +41,7 @@ Zero-config: the production TCM instance (`https://tcm-ochre.vercel.app`) is **b
 **Claude Code** — one command, nothing to edit by hand:
 
 ```bash
-claude mcp add tcm --scope user -- npx --yes github:JoinFullStackDev/tcm-mcp#v1.3.0 --stdio
+claude mcp add tcm --scope user -- npx --yes github:JoinFullStackDev/tcm-mcp#v1.4.0 --stdio
 ```
 
 `--scope user` makes it available in every project. (Drop it to scope to the current project; Claude Code writes the `.mcp.json` for you.)
@@ -57,13 +58,13 @@ claude mcp add tcm --scope user -- npx --yes github:JoinFullStackDev/tcm-mcp#v1.
   "mcpServers": {
     "tcm": {
       "command": "npx",
-      "args": ["--yes", "github:JoinFullStackDev/tcm-mcp#v1.3.0", "--stdio"]
+      "args": ["--yes", "github:JoinFullStackDev/tcm-mcp#v1.4.0", "--stdio"]
     }
   }
 }
 ```
 
-> **Pin to a tag** (`#v1.3.0`), **not a branch** — a branch ref re-resolves on every launch and can trip the 30 s MCP startup timeout. No `env` block is needed.
+> **Pin to a tag** (`#v1.4.0`), **not a branch** — a branch ref re-resolves on every launch and can trip the 30 s MCP startup timeout. No `env` block is needed.
 
 ### 2. Sign in
 
@@ -76,7 +77,7 @@ Claude calls the `login` tool, a browser opens once for Google sign-in, and the 
 Prefer a terminal? Same thing, run once:
 
 ```bash
-npx --yes github:JoinFullStackDev/tcm-mcp#v1.3.0 login
+npx --yes github:JoinFullStackDev/tcm-mcp#v1.4.0 login
 ```
 
 Details: [Auto-refreshing login](#auto-refreshing-login-recommended).
@@ -91,7 +92,7 @@ If you'd rather edit `.mcp.json` directly (Claude Code project or `~/.claude/.mc
   "mcpServers": {
     "tcm": {
       "command": "npx",
-      "args": ["--yes", "github:JoinFullStackDev/tcm-mcp#v1.3.0", "--stdio"],
+      "args": ["--yes", "github:JoinFullStackDev/tcm-mcp#v1.4.0", "--stdio"],
       "env": { "TCM_USER_TOKEN": "${TCM_USER_TOKEN}" },
     },
   },
@@ -120,7 +121,7 @@ The login helper signs you into TCM in a browser once and writes a **session fil
 
 ```bash
 # no clone needed — runs straight from the git URL:
-npx --yes github:JoinFullStackDev/tcm-mcp#v1.3.0 login
+npx --yes github:JoinFullStackDev/tcm-mcp#v1.4.0 login
 
 # ...or, from a local clone of this repo:
 npm run login
