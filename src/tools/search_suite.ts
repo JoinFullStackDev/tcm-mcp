@@ -74,11 +74,21 @@ export async function searchSuite(
     };
   }
 
-  // Map TCM response to SuiteRef shape (TCM returns id, not suite_id)
-  return suites.map((s: SuiteRef & { id?: string }) => ({
-    suite_id: (s as { id?: string; suite_id?: string }).id ?? s.suite_id,
-    name: s.name,
-    prefix: s.prefix,
-    project_id: s.project_id,
-  })) as SuiteRef[];
+  return toSuiteRefs(suites);
+}
+
+/**
+ * Map a raw TCM suites payload to SuiteRef[]. TCM returns `id` (not `suite_id`) and
+ * carries `group` + `test_case_count`; keep them so list_suites / search_suite expose
+ * the role label and the truncation-guard count. Shared with list_suites.
+ */
+export function toSuiteRefs(suites: unknown[]): SuiteRef[] {
+  return (suites as Array<Record<string, unknown>>).map((s) => ({
+    suite_id: (s.id ?? s.suite_id) as string,
+    name: s.name as string,
+    prefix: s.prefix as string,
+    project_id: s.project_id as string,
+    group: (s.group ?? null) as string | null,
+    test_case_count: s.test_case_count as number | undefined,
+  }));
 }
