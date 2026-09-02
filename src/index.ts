@@ -40,6 +40,7 @@ import { resolveAuthConfig } from './auth.js';
 import { SessionExpiredError } from './token-provider.js';
 import { TcmClient } from './client.js';
 import { searchSuite } from './tools/search_suite.js';
+import { createSuite } from './tools/create_suite.js';
 import { listSuites } from './tools/list_suites.js';
 import { listTestCases } from './tools/list_test_cases.js';
 import { getTestCase } from './tools/get_test_case.js';
@@ -50,6 +51,46 @@ import { listProjects } from './tools/list_projects.js';
 // ─── Tool definitions ─────────────────────────────────────────────────────────
 
 const TOOLS: Tool[] = [
+  {
+    name: 'create_suite',
+    description:
+      'Create a new test suite in a project. ' +
+      'Call this when no existing suite matches the feature being tested. ' +
+      'Accepts project_id OR project_name (exactly one). ' +
+      'Returns the created suite including its suite_id for use in create_test_case.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        project_id: {
+          type: 'string',
+          description: 'Project UUID. Provide this OR project_name (exactly one).',
+        },
+        project_name: {
+          type: 'string',
+          description:
+            'Project name (case-insensitive exact match) as an alternative to project_id.',
+        },
+        name: {
+          type: 'string',
+          description: 'Suite name (e.g. "Stripe V1 UI Integration").',
+        },
+        prefix: {
+          type: 'string',
+          description: 'Short uppercase prefix used for test case display IDs (e.g. "SV1"). Max 20 chars.',
+        },
+        description: {
+          type: 'string',
+          description: 'Optional suite description.',
+          nullable: true,
+        },
+        group: {
+          type: 'string',
+          description: 'Sidebar group label (e.g. "Features", "Pharmacy", "Patient"). Optional.',
+        },
+      },
+      required: ['name', 'prefix'],
+    },
+  },
   {
     name: 'search_suite',
     description:
@@ -332,6 +373,10 @@ async function main() {
 
     try {
       switch (name) {
+        case 'create_suite':
+          result = await createSuite(tcmClient, input as Parameters<typeof createSuite>[1]);
+          break;
+
         case 'search_suite':
           result = await searchSuite(tcmClient, input as Parameters<typeof searchSuite>[1]);
           break;
