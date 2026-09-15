@@ -83,11 +83,36 @@ export async function createSuite(
     };
   }
 
+  // client.ts sets data = null whenever the body doesn't parse as JSON while ok stays true
+  // — an empty 201, or an HTML page from an intervening proxy. toSuiteRefs would dereference
+  // that null and the TypeError would escape as a raw MCP -32603, since index.ts only
+  // converts SessionExpiredError. Return a structured error instead, as client.ts promises.
+  if (!res.data || typeof res.data !== 'object') {
+    return {
+      error: {
+        code: 'SERVER_ERROR',
+        message: `TCM returned ${res.status} with no suite body.`,
+      },
+    };
+  }
+
   // TCM returns the raw suites row, whose primary key is `id` — not `suite_id`. Reading
   // res.data.suite_id directly yielded undefined, which then failed create_test_case's
   // uuid check. toSuiteRefs is the shared normalizer that already knows this; go through it
   // rather than re-deriving the mapping here.
   const suite = toSuiteRefs([res.data])[0];
+
+  // A shape toSuiteRefs can't map (e.g. a wrapped `{ suite: {...} }`) yields undefined with
+  // no error — the original bug, just silent. Fail loudly rather than hand create_test_case
+  // an undefined it will reject with a confusing uuid error.
+  if (!suite?.suite_id) {
+    return {
+      error: {
+        code: 'SERVER_ERROR',
+        message: `TCM returned ${res.status} without a recognisable suite id: ${JSON.stringify(res.data)}`,
+      },
+    };
+  }
   return {
     ...suite,
     // The POST response predates any test cases, and TCM does not project a count onto it.

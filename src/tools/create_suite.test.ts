@@ -76,5 +76,19 @@ function fake(status: number, data: unknown, calls: Call[] = []): TcmClient {
   );
   assert(!('error' in alt) && alt.suite_id === SUITE, 'suite_id shape also accepted');
 
+  // A 2xx whose body didn't parse leaves data null (client.ts) with ok still true. That
+  // must be a structured error, not a TypeError escaping as a raw MCP -32603.
+  const emptyBody = await createSuite(fake(201, null), {
+    project_id: PROJECT, name: 'L', prefix: 'L',
+  } as never);
+  assert('error' in emptyBody && emptyBody.error.code === 'SERVER_ERROR', 'null body -> SERVER_ERROR');
+
+  // A shape toSuiteRefs cannot map must not silently produce suite_id: undefined — that is
+  // the original bug wearing a different hat.
+  const wrapped = await createSuite(fake(201, { suite: TCM_ROW }), {
+    project_id: PROJECT, name: 'L', prefix: 'L',
+  } as never);
+  assert('error' in wrapped && wrapped.error.code === 'SERVER_ERROR', 'unmappable shape -> SERVER_ERROR');
+
   console.log('create_suite response mapping: all checks passed');
 })();
