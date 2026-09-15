@@ -23,7 +23,7 @@
  * `needs-login` mode (server still boots so the `login` tool is reachable).
  */
 
-import { resolveBaseUrl, VERSION } from './config.js';
+import { resolveBaseUrl } from './config.js';
 import {
   defaultSessionFile,
   RefreshingTokenProvider,
@@ -75,7 +75,8 @@ class NoAuthProvider implements AuthProvider {
 
   async headers(): Promise<Record<string, string>> {
     throw new SessionExpiredError(
-      `[tcm-mcp] Not signed in to TCM. Run the \`login\` tool (or \`npx github:JoinFullStackDev/tcm-mcp#v${VERSION} login\`) to sign in.`,
+      '[tcm-mcp] Not signed in to TCM. Run the `login` tool, or re-run your configured ' +
+        'install command with `login` appended (e.g. `npx github:JoinFullStackDev/tcm-mcp#<your-pinned-tag> login`).',
     );
   }
 

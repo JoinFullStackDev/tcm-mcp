@@ -24,6 +24,10 @@ const LIST_LIMIT_DEFAULT = 50;
 /** TCM caps /api/test-cases at 200 rows and exposes no offset — this is one full page. */
 const BACKEND_MAX_ROWS = 200;
 
+const UNTAGGABLE =
+  'TCM returned a projection without tags, so the tags filter cannot be applied. ' +
+  'Retry without `tags`, or upgrade TCM to a build whose /api/test-cases supports tag filtering.';
+
 export const listTestCasesInputSchema = z
   .object({
     project_id: z.string().uuid().optional(),
@@ -97,16 +101,16 @@ export async function listTestCases(
     // we cannot tag-filter — say so instead of reporting a confident "no matches", which
     // is indistinguishable from a real empty result.
     if (!Array.isArray(res.data)) {
-      return {
-        error: {
-          code: 'SERVER_ERROR',
-          message:
-            'TCM returned a projection without tags, so the tags filter cannot be applied. ' +
-            'Retry without `tags`, or upgrade TCM to a build whose /api/test-cases supports tag filtering.',
-        },
-      };
+      return { error: { code: 'SERVER_ERROR', message: UNTAGGABLE } };
     }
     const rows = res.data;
+    // Same reasoning one level down: an array of rows that simply do not carry `tags`
+    // (an older TCM, or a narrowed projection) would match nothing and read as a real
+    // empty result. `tags` is NOT NULL DEFAULT '{}' in TCM, so every row of a `select *`
+    // has the key — its total absence across a non-empty page means we were not given it.
+    if (rows.length > 0 && !rows.some((tc: unknown) => tc !== null && typeof tc === 'object' && 'tags' in tc)) {
+      return { error: { code: 'SERVER_ERROR', message: UNTAGGABLE } };
+    }
     const wanted = new Set(tags.map((t) => t.trim().toLowerCase()));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const matched = rows.filter((tc: any) =>
@@ -140,7 +144,14 @@ export async function listTestCases(
   };
 }
 
-/** Project a full TCM row down to the lean list item (keeping tags, which lean omits). */
+/**
+ * Project a full TCM row down to the lean list item, keeping `tags` (which lean omits).
+ *
+ * `tags` is omitted entirely when the row has no such key — this helper is shared with the
+ * legacy raw-array fallback, where rows may be lean. Emitting `tags: []` there would assert
+ * "this case has no tags" when the truth is "we were not told", which the field's doc
+ * comment on TestCaseListItem explicitly disclaims.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toListItem(tc: any): TestCaseListItem {
   return {
@@ -148,6 +159,6 @@ function toListItem(tc: any): TestCaseListItem {
     title: tc.title,
     automation_status: tc.automation_status,
     priority: tc.priority,
-    tags: tc.tags ?? [],
+    ...(tc.tags ? { tags: tc.tags } : {}),
   };
 }

@@ -1,6 +1,6 @@
 /**
  * Self-check for the client-side tag filter in list_test_cases.
- * Run: npx ts-node src/tools/list_test_cases.test.ts
+ * Run: npm run check   (builds first — the .js specifiers need the compiled output)
  */
 import assert from 'assert';
 import { listTestCases } from './list_test_cases.js';
@@ -64,6 +64,24 @@ function fake(rows: unknown[], urls: string[] = []): TcmClient {
   } as never);
   assert(oldUrls[0].includes('fields=lean') && oldUrls[0].includes('limit=25'), 'v1.4.0-shaped call unchanged');
   assert(!oldUrls[0].includes('tags'), 'no tags param leaks into untagged calls');
+
+  // Rows that simply don't carry `tags` must also fail loudly, not report "no matches".
+  const untagged = await listTestCases(
+    fake([{ display_id: 'A-1', title: 'a', automation_status: 'not_automated', priority: null }]),
+    { tags: ['smoke'] } as never,
+  );
+  assert('error' in untagged && untagged.error.code === 'SERVER_ERROR', 'rows without a tags key error loudly');
+
+  // ...but a genuinely empty page is a real empty result, not an error.
+  const emptyPage = await listTestCases(fake([]), { tags: ['smoke'] } as never);
+  assert('items' in emptyPage && emptyPage.total === 0, 'empty page is a real empty result');
+
+  // The legacy raw-array fallback must not claim "no tags" for rows it was never told about.
+  const legacy = await listTestCases(
+    fake([{ display_id: 'L-1', title: 'l', automation_status: 'not_automated', priority: null }]),
+    {} as never,
+  );
+  assert('items' in legacy && !('tags' in legacy.items[0]), 'tags omitted, not stamped as []');
 
   console.log('list_test_cases tag filter: all checks passed');
 })();
