@@ -49,9 +49,9 @@ export interface ListTestCasesInput {
   project_id?: string;
   suite_id?: string;
   search?: string;
-  /** Match cases carrying ANY of these tags (case-insensitive). Filtered MCP-side. */
+  /** Match cases carrying ANY of these tags (case-insensitive). Filtered by TCM. */
   tags?: string[];
-  /** Default 50, max 200. Values >200 are clamped to 200. */
+  /** Default 50, max 200. Values >200 are rejected as a VALIDATION error, not clamped. */
   limit?: number;
 }
 
@@ -94,7 +94,7 @@ export interface TestCaseListItem {
   title: string;
   automation_status: AutomationStatus;
   priority: Priority | null;
-  /** Populated only when the full projection was fetched (i.e. the `tags` filter path). */
+  /** Present when TCM's projection carries tags; optional for older TCM builds. */
   tags?: string[];
 }
 

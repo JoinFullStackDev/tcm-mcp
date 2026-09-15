@@ -161,11 +161,11 @@ const TOOLS: Tool[] = [
           items: { type: 'string' },
           description:
             'Return cases carrying ANY of these tags, e.g. ["needs-qa-review", "imported-from-dev-tests"]. ' +
-            'Case-insensitive. Matched cases include their full tags list. ' +
-            'Filtering happens MCP-side over one 200-row page of TCM, so scope with project_id/project_name ' +
-            'or suite_id on large instances; has_more is true when that page was full.',
+            'Case-insensitive; matched cases include their full tags list. ' +
+            'TCM does the filtering in the database across the whole project, so `total` is the real ' +
+            'number of matches rather than a count within one page.',
         },
-        limit: { type: 'number', description: 'Max results (default 50, max 200).' },
+        limit: { type: 'number', description: 'Max results (default 50). Must be 1-200; larger values are rejected.' },
       },
       required: [],
     },
@@ -196,7 +196,7 @@ const TOOLS: Tool[] = [
       type: 'object' as const,
       properties: {
         search: { type: 'string', description: 'Case-insensitive filter on project name.' },
-        limit: { type: 'number', description: 'Max results (default 50, max 200).' },
+        limit: { type: 'number', description: 'Max results (default 50). Must be 1-200; larger values are rejected.' },
       },
       required: [],
     },
