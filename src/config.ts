@@ -27,4 +27,4 @@ export function resolveBaseUrl(): string {
  *
  * Clients pin by git tag, so an older pin keeps running that tag's code untouched.
  */
-export const VERSION = '1.6.0';
+export const VERSION = '1.7.0';

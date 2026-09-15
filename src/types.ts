@@ -51,7 +51,7 @@ export interface ListTestCasesInput {
   search?: string;
   /** Match cases carrying ANY of these tags (case-insensitive). Filtered by TCM. */
   tags?: string[];
-  /** Default 50, max 200. Values >200 are clamped to 200. */
+  /** Default 50, max 200. Values >200 are rejected as a VALIDATION error, not clamped. */
   limit?: number;
 }
 

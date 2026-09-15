@@ -165,7 +165,7 @@ const TOOLS: Tool[] = [
             'TCM does the filtering in the database across the whole project, so `total` is the real ' +
             'number of matches rather than a count within one page.',
         },
-        limit: { type: 'number', description: 'Max results (default 50, max 200).' },
+        limit: { type: 'number', description: 'Max results (default 50). Must be 1-200; larger values are rejected.' },
       },
       required: [],
     },
@@ -196,7 +196,7 @@ const TOOLS: Tool[] = [
       type: 'object' as const,
       properties: {
         search: { type: 'string', description: 'Case-insensitive filter on project name.' },
-        limit: { type: 'number', description: 'Max results (default 50, max 200).' },
+        limit: { type: 'number', description: 'Max results (default 50). Must be 1-200; larger values are rejected.' },
       },
       required: [],
     },

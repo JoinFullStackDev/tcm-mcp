@@ -58,7 +58,8 @@ export async function listTestCases(
   }
 
   const { project_id, project_name, suite_id, search, tags, limit } = parsed.data;
-  const clampedLimit = Math.min(limit ?? LIST_LIMIT_DEFAULT, LIST_LIMIT_MAX);
+  // No Math.min needed: the schema's .max(LIST_LIMIT_MAX) rejects anything larger.
+  const effectiveLimit = limit ?? LIST_LIMIT_DEFAULT;
 
   // Resolve project_name -> UUID when provided (project_id passes through unchanged).
   let resolvedProjectId = project_id;
@@ -68,10 +69,12 @@ export async function listTestCases(
     resolvedProjectId = resolved.project_id;
   }
 
-  const params = new URLSearchParams({ fields: 'lean', limit: String(clampedLimit) });
+  const params = new URLSearchParams({ fields: 'lean', limit: String(effectiveLimit) });
   // Repeated params rather than a comma-joined value, so a tag containing a comma
   // survives: TCM splits on commas as a convenience for hand-written URLs.
-  if (tags) for (const t of tags) params.append('tags', t);
+  // Trimmed here as well as server-side, so a tag pasted from a UI label with stray
+  // whitespace doesn't depend on the backend to clean it up.
+  if (tags) for (const t of tags) params.append('tags', t.trim());
   if (resolvedProjectId) params.set('project_id', resolvedProjectId);
   if (suite_id) params.set('suite_id', suite_id);
   if (search) params.set('search', search);
@@ -90,11 +93,39 @@ export async function listTestCases(
   // TCM returns { items, total, has_more } when fields=lean
   if (res.data && typeof res.data === 'object' && 'items' in (res.data as object)) {
     const result = res.data as ListTestCasesResult;
-    const notedClamp = (limit ?? LIST_LIMIT_DEFAULT) > LIST_LIMIT_MAX;
+    const items = result.items ?? [];
+
+    // Confirm TCM actually applied the filter. A backend predating the server-side `tags`
+    // support — or a proxy that drops unknown query params — ignores `tags` and returns the
+    // ordinary page, which we would otherwise report as "these are your matches": 494
+    // arbitrary cases presented as tagged `smoke`. That is worse than the under-reporting
+    // this passthrough replaced, so it has to fail loudly.
+    //
+    // The filter is ANY-of, so if it ran, EVERY returned row carries a requested tag.
+    if (tags && items.length > 0) {
+      const wanted = new Set(tags.map((t) => t.trim().toLowerCase()));
+      const honoured = items.every(
+        (i) =>
+          Array.isArray(i.tags) &&
+          i.tags.some((t) => wanted.has(String(t).trim().toLowerCase())),
+      );
+      if (!honoured) {
+        return {
+          error: {
+            code: 'SERVER_ERROR',
+            message:
+              'TCM returned rows that do not all carry a requested tag, so the `tags` filter ' +
+              'was not applied (or its response omits `tags` and cannot be verified). ' +
+              'Results are NOT filtered by tag — retry without `tags`, or upgrade TCM.',
+          },
+        };
+      }
+    }
+
     return {
-      items: result.items ?? [],
-      total: result.total ?? (result.items ?? []).length,
-      has_more: result.has_more || notedClamp,
+      items,
+      total: result.total ?? items.length,
+      has_more: result.has_more ?? false,
     };
   }
 

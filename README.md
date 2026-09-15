@@ -23,7 +23,7 @@ Reads exclude trashed (soft-deleted) cases. Test-case writes (`create_test_case`
 
 **Project scoping.** `search_suite`, `list_suites`, and `list_test_cases` scope by project. Pass a `project_id` (UUID) directly, or a `project_name` — the server resolves the name to an id via `list_projects` (case-insensitive exact match; an unknown name returns `NOT_FOUND` and an ambiguous one returns `AMBIGUOUS` with the candidate ids). Use `list_projects` first to discover ids. `list_test_cases` with no project returns cases across every project you can see.
 
-**Tag filtering.** `list_test_cases` takes a `tags` array — `{ "tags": ["needs-qa-review", "imported-from-dev-tests"] }` returns cases carrying **any** of them (case-insensitive), each with its full `tags` list. TCM filters in the database across the whole project, so `total` is the real match count. Tags are stored canonically (trimmed, lowercased, de-duplicated), so `Smoke` and `smoke` are one tag.
+**Tag filtering** (v1.7.0+, and requires a TCM with server-side tag filtering). `list_test_cases` takes a `tags` array — `{ "tags": ["needs-qa-review", "imported-from-dev-tests"] }` returns cases carrying **any** of them (case-insensitive), each with its full `tags` list. TCM filters in the database across the whole project, so `total` is the real match count. Tags are stored canonically (trimmed, lowercased, de-duplicated), so `Smoke` and `smoke` are one tag.
 
 ## Requirements
 

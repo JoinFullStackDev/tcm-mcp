@@ -26,7 +26,7 @@ function fake(data: unknown, urls: string[] = []): TcmClient {
   } as unknown as TcmClient;
 }
 
-(async () => {
+export async function run(): Promise<void> {
   // Tags go as REPEATED params, never comma-joined: TCM splits on commas as a convenience
   // for hand-written URLs, so joining would split a tag that itself contains one.
   const urls: string[] = [];
@@ -38,20 +38,38 @@ function fake(data: unknown, urls: string[] = []): TcmClient {
   // TCM's count is authoritative — we must not recompute it from the page we received.
   // This is the regression that mattered: the old client-side scan reported 8 of 25.
   const counted = await listTestCases(
-    fake(envelope([{ display_id: 'A-1' }, { display_id: 'A-2' }], 25, true)),
+    fake(envelope([{ display_id: 'A-1', tags: ['smoke'] }, { display_id: 'A-2', tags: ['smoke'] }], 25, true)),
     { tags: ['smoke'] } as never,
   );
   assert('items' in counted && counted.total === 25, 'server total passed through, not items.length');
   assert('items' in counted && counted.has_more === true, 'server has_more passed through');
   assert('items' in counted && counted.items.length === 2, 'items are the page TCM returned');
 
-  // No client-side filtering left: whatever TCM returns is the answer, even if a row's
-  // tags look unrelated (it may have matched on a tag lean did not project).
-  const trust = await listTestCases(
-    fake(envelope([{ display_id: 'B-1', tags: ['other'] }])),
+  // We no longer re-filter, but we DO verify TCM applied the filter — a backend that
+  // ignored `tags` returns the ordinary page, which must not be reported as matches.
+  const ignored = await listTestCases(
+    fake(envelope([{ display_id: 'B-1', tags: ['other'] }], 494)),
     { tags: ['smoke'] } as never,
   );
-  assert('items' in trust && trust.items.length === 1, 'results are not re-filtered locally');
+  assert('error' in ignored && ignored.error.code === 'SERVER_ERROR', 'unfiltered page rejected');
+
+  // Same when the projection carries no tags at all: unverifiable, so not trusted.
+  const noTags = await listTestCases(
+    fake(envelope([{ display_id: 'C-1' }], 494)),
+    { tags: ['smoke'] } as never,
+  );
+  assert('error' in noTags && noTags.error.code === 'SERVER_ERROR', 'unverifiable page rejected');
+
+  // A genuinely filtered page passes, and is returned as-is.
+  const good = await listTestCases(
+    fake(envelope([{ display_id: 'D-1', tags: ['smoke', 'x'] }], 25, false)),
+    { tags: ['SMOKE'] } as never,
+  );
+  assert('items' in good && good.total === 25, 'filtered page trusted, case-insensitively');
+
+  // An empty result is legitimate — nothing to verify, and must not error.
+  const none = await listTestCases(fake(envelope([], 0)), { tags: ['nope'] } as never);
+  assert('items' in none && none.total === 0, 'genuine empty result is not an error');
 
   // Untagged calls must not grow a tags param.
   const plain: string[] = [];
@@ -59,7 +77,7 @@ function fake(data: unknown, urls: string[] = []): TcmClient {
   assert(!plain[0].includes('tags'), 'no tags param on untagged calls');
   assert(plain[0].includes('limit=25') && plain[0].includes(`project_id=${PROJECT}`), 'other filters intact');
 
-  // Over-max limit is clamped and flagged rather than silently truncated.
+  // Over-max limit is rejected outright (not clamped) — the docs now say so.
   const clamped = await listTestCases(fake(envelope([])), { limit: 500 } as never);
   assert('error' in clamped, 'limit above max is a validation error');
 
@@ -72,4 +90,4 @@ function fake(data: unknown, urls: string[] = []): TcmClient {
   assert.strictEqual(VERSION, pkgVersion, `config.VERSION ${VERSION} != package.json ${pkgVersion}`);
 
   console.log('list_test_cases tag passthrough: all checks passed');
-})();
+}

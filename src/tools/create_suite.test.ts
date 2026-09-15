@@ -32,7 +32,7 @@ function fake(status: number, data: unknown, calls: Call[] = []): TcmClient {
   } as unknown as TcmClient;
 }
 
-(async () => {
+export async function run(): Promise<void> {
   const calls: Call[] = [];
   const ok = await createSuite(
     fake(201, TCM_ROW, calls),
@@ -91,4 +91,4 @@ function fake(status: number, data: unknown, calls: Call[] = []): TcmClient {
   assert('error' in wrapped && wrapped.error.code === 'SERVER_ERROR', 'unmappable shape -> SERVER_ERROR');
 
   console.log('create_suite response mapping: all checks passed');
-})();
+}
