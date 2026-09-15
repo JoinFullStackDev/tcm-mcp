@@ -12,7 +12,7 @@
     "dev": "ts-node src/index.ts",
     "start": "node dist/index.js",
     "login": "node scripts/login.mjs",
-    "check": "npm run build && node dist/tools/list_test_cases.test.js"
+    "check": "npm run build && for f in dist/tools/*.test.js; do node \"$f\" || exit 1; done"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

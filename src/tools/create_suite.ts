@@ -9,6 +9,7 @@ import { z } from 'zod';
 import type { TcmClient } from '../client.js';
 import type { SuiteRef, McpError } from '../types.js';
 import { resolveProjectId } from './resolve_project.js';
+import { toSuiteRefs } from './search_suite.js';
 
 export const createSuiteInputSchema = z
   .object({
@@ -28,6 +29,7 @@ export type CreateSuiteInput = z.infer<typeof createSuiteInputSchema>;
 export async function createSuite(
   client: TcmClient,
   input: CreateSuiteInput,
+  correlationId?: string,
 ): Promise<SuiteRef | McpError> {
   const parsed = createSuiteInputSchema.safeParse(input);
   if (!parsed.success) {
@@ -53,10 +55,24 @@ export async function createSuite(
     group: parsed.data.group ?? null,
   };
 
-  const res = await client.post<SuiteRef>(
-    `/api/projects/${project_id}/suites`,
-    body,
-  );
+  const res = await client.post<unknown>(`/api/projects/${project_id}/suites`, body, {
+    correlationId,
+    intent: 'commit-create-suite',
+  });
+
+  // A 400 here is a rejected payload — duplicate prefix, name too long, bad group. Reporting
+  // it as SERVER_ERROR reads to an agent as a transient fault, so it retries a create that
+  // can never succeed. Mirrors create_test_case / update_test_case.
+  if (res.status === 400) {
+    return {
+      error: {
+        code: 'VALIDATION',
+        message: `Validation failed: ${JSON.stringify(
+          (res.data as { error?: string; details?: unknown })?.details ?? res.data,
+        )}`,
+      },
+    };
+  }
 
   if (!res.ok) {
     return {
@@ -67,13 +83,15 @@ export async function createSuite(
     };
   }
 
-  const suite = res.data as SuiteRef;
+  // TCM returns the raw suites row, whose primary key is `id` — not `suite_id`. Reading
+  // res.data.suite_id directly yielded undefined, which then failed create_test_case's
+  // uuid check. toSuiteRefs is the shared normalizer that already knows this; go through it
+  // rather than re-deriving the mapping here.
+  const suite = toSuiteRefs([res.data])[0];
   return {
-    suite_id: suite.suite_id,
-    name: suite.name,
-    prefix: suite.prefix,
-    project_id: suite.project_id,
-    group: suite.group,
+    ...suite,
+    // The POST response predates any test cases, and TCM does not project a count onto it.
+    project_id: suite.project_id ?? project_id,
     test_case_count: suite.test_case_count ?? 0,
   };
 }

@@ -384,7 +384,11 @@ async function main() {
     try {
       switch (name) {
         case 'create_suite':
-          result = await createSuite(tcmClient, input as Parameters<typeof createSuite>[1]);
+          result = await createSuite(
+            tcmClient,
+            input as Parameters<typeof createSuite>[1],
+            correlationId,
+          );
           break;
 
         case 'search_suite':
