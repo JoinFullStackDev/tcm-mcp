@@ -13,7 +13,7 @@ Full design: [`docs/features/mcp-e1-test-case-crud.md`](https://github.com/JoinF
 | `list_projects`    | Discover the projects you can see (`project_id` + `name`). Search by name; default 50, max 200.                      |
 | `search_suite`     | Resolve a suite name/prefix → `suite_id` within a project (`project_id` **or** `project_name`).                      |
 | `list_suites`      | List **every** suite in a project — each with `suite_id`, `name`, `prefix`, `group` (role label), `test_case_count`. |
-| `list_test_cases`  | Lightweight filterable list (`display_id`, `title`, `automation_status`, `priority`). Default 50, max 200.           |
+| `list_test_cases`  | Lightweight filterable list (`display_id`, `title`, `automation_status`, `priority`); filter by `tags`. Default 50, max 200. |
 | `get_test_case`    | Full detail + steps, by `display_id`.                                                                                |
 | `create_test_case` | Create a case with steps — **dry-run → approval → commit** (see below).                                              |
 | `update_test_case` | Partial update; steps are **full-replace** when provided — same dry-run flow.                                        |
@@ -21,6 +21,8 @@ Full design: [`docs/features/mcp-e1-test-case-crud.md`](https://github.com/JoinF
 Reads exclude trashed (soft-deleted) cases. Writes require the dry-run flow.
 
 **Project scoping.** `search_suite`, `list_suites`, and `list_test_cases` scope by project. Pass a `project_id` (UUID) directly, or a `project_name` — the server resolves the name to an id via `list_projects` (case-insensitive exact match; an unknown name returns `NOT_FOUND` and an ambiguous one returns `AMBIGUOUS` with the candidate ids). Use `list_projects` first to discover ids. `list_test_cases` with no project returns cases across every project you can see.
+
+**Tag filtering** (v1.6.0+ — the install snippets below still pin an older tag; bump the pin to use this). `list_test_cases` takes a `tags` array — `{ "tags": ["needs-qa-review", "imported-from-dev-tests"] }` returns cases carrying **any** of them (case-insensitive), each with its full `tags` list. TCM's REST API has no `tags` filter, so the server does this itself over **one 200-row page** — scope the query with `project_id`/`project_name` or `suite_id` on large instances, and treat `has_more: true` as "that page was full, there may be more matches".
 
 ## Requirements
 

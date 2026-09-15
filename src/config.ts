@@ -16,3 +16,15 @@ export function resolveBaseUrl(): string {
     '',
   );
 }
+
+/**
+ * Server version, reported in the MCP handshake. `npm run check` asserts this equals
+ * package.json's version, so the two cannot drift apart — bump both together.
+ *
+ * This only ever describes the build the user actually launched; it is deliberately
+ * NOT used to build install commands, because the matching `v<VERSION>` tag does not
+ * exist until the release is cut, and a hint naming an unpushed tag fails to resolve.
+ *
+ * Clients pin by git tag, so an older pin keeps running that tag's code untouched.
+ */
+export const VERSION = '1.6.0';
