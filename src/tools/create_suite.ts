@@ -60,10 +60,12 @@ export async function createSuite(
     intent: 'commit-create-suite',
   });
 
-  // A 400 here is a rejected payload — duplicate prefix, name too long, bad group. Reporting
-  // it as SERVER_ERROR reads to an agent as a transient fault, so it retries a create that
-  // can never succeed. Mirrors create_test_case / update_test_case.
-  if (res.status === 400) {
+  // A rejected payload — name too long, bad group (400), or a prefix already used in this
+  // project (409, via TCM's conflict() helper). Reporting any of them as SERVER_ERROR reads
+  // to an agent as a transient fault, so it retries a create that can never succeed.
+  // 409 is the common one in practice and was the case this branch originally cited while
+  // only handling 400. Mirrors create_test_case / update_test_case, which both map 409.
+  if (res.status === 400 || res.status === 409 || res.status === 422) {
     return {
       error: {
         code: 'VALIDATION',

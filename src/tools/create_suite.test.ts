@@ -63,6 +63,20 @@ function fake(status: number, data: unknown, calls: Call[] = []): TcmClient {
   assert('error' in dup && dup.error.code === 'VALIDATION', '400 maps to VALIDATION');
   assert('error' in dup && dup.error.message.includes('already in use'), 'details surfaced');
 
+  // The case the comment always named: TCM's conflict() returns 409 for a prefix already
+  // used in the project. Falling through to SERVER_ERROR invites an endless retry.
+  const conflict = await createSuite(
+    fake(409, { error: 'A suite with prefix "LOG" already exists in this project' }),
+    { project_id: PROJECT, name: 'Login', prefix: 'LOG' } as never,
+  );
+  assert('error' in conflict && conflict.error.code === 'VALIDATION', '409 maps to VALIDATION');
+  assert('error' in conflict && conflict.error.message.includes('already exists'), 'conflict reason surfaced');
+
+  const unprocessable = await createSuite(fake(422, { error: 'nope' }), {
+    project_id: PROJECT, name: 'L', prefix: 'L',
+  } as never);
+  assert('error' in unprocessable && unprocessable.error.code === 'VALIDATION', '422 maps to VALIDATION');
+
   // Genuine server faults still read as such.
   const boom = await createSuite(fake(500, { error: 'boom' }), {
     project_id: PROJECT, name: 'Login', prefix: 'LOG',
