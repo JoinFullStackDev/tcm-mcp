@@ -1,7 +1,7 @@
 {
   "name": "tcm-mcp",
-  "version": "1.4.0",
-  "description": "MCP stdio server for TCM (Test Case CRUD — Epic 1)",
+  "version": "1.5.0",
+  "description": "MCP stdio server for TCM (Test Case CRUD \u2014 Epic 1)",
   "main": "dist/index.js",
   "bin": {
     "tcm-mcp": "dist/index.js"
@@ -11,7 +11,8 @@
     "prepare": "npm run build",
     "dev": "ts-node src/index.ts",
     "start": "node dist/index.js",
-    "login": "node scripts/login.mjs"
+    "login": "node scripts/login.mjs",
+    "check": "npm run build && node dist/tools/list_test_cases.test.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

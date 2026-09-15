@@ -49,6 +49,8 @@ export interface ListTestCasesInput {
   project_id?: string;
   suite_id?: string;
   search?: string;
+  /** Match cases carrying ANY of these tags (case-insensitive). Filtered MCP-side. */
+  tags?: string[];
   /** Default 50, max 200. Values >200 are clamped to 200. */
   limit?: number;
 }
@@ -92,6 +94,8 @@ export interface TestCaseListItem {
   title: string;
   automation_status: AutomationStatus;
   priority: Priority | null;
+  /** Populated only when the full projection was fetched (i.e. the `tags` filter path). */
+  tags?: string[];
 }
 
 /** Full case detail with steps. */

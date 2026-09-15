@@ -16,3 +16,14 @@ export function resolveBaseUrl(): string {
     '',
   );
 }
+
+/**
+ * Server version, reported in the MCP handshake and used in the install hints the
+ * `login` flow prints. Kept here so `package.json`, the handshake, and those hints
+ * cannot drift apart — bump this and package.json together at release time, and tag
+ * the repo `v<VERSION>` so the hint resolves.
+ *
+ * Clients pin by git tag, so an older pin keeps running that tag's code untouched;
+ * this value only ever describes the build the user actually launched.
+ */
+export const VERSION = '1.5.0';

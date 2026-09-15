@@ -37,6 +37,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 
 import { resolveAuthConfig } from './auth.js';
+import { VERSION } from './config.js';
 import { SessionExpiredError } from './token-provider.js';
 import { TcmClient } from './client.js';
 import { searchSuite } from './tools/search_suite.js';
@@ -147,7 +148,7 @@ const TOOLS: Tool[] = [
     name: 'list_test_cases',
     description:
       'List test cases with lightweight projection (display_id, title, automation_status, priority). ' +
-      'Filterable by project, suite, or search term. Default limit 50, max 200.',
+      'Filterable by project, suite, search term, or tags. Default limit 50, max 200.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -155,6 +156,15 @@ const TOOLS: Tool[] = [
         project_name: { type: 'string', description: 'Filter by project name (case-insensitive exact match) instead of project_id. Provide at most one of project_id / project_name.' },
         suite_id: { type: 'string', description: 'Filter by suite UUID.' },
         search: { type: 'string', description: 'ilike match on display_id or title.' },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Return cases carrying ANY of these tags, e.g. ["needs-qa-review", "imported-from-dev-tests"]. ' +
+            'Case-insensitive. Matched cases include their full tags list. ' +
+            'Filtering happens MCP-side over one 200-row page of TCM, so scope with project_id/project_name ' +
+            'or suite_id on large instances; has_more is true when that page was full.',
+        },
         limit: { type: 'number', description: 'Max results (default 50, max 200).' },
       },
       required: [],
@@ -347,7 +357,7 @@ async function main() {
   );
 
   const server = new Server(
-    { name: 'tcm-mcp', version: '1.4.0' },
+    { name: 'tcm-mcp', version: VERSION },
     { capabilities: { tools: {} } },
   );
 
