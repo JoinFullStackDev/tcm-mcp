@@ -21,12 +21,21 @@ import { resolveProjectId } from './resolve_project.js';
 const LIST_LIMIT_MAX = 200;
 const LIST_LIMIT_DEFAULT = 50;
 
-/** TCM caps /api/test-cases at 200 rows and exposes no offset — this is one full page. */
+/**
+ * One full page from TCM. Must track LIST_LIMIT_MAX in TCM's src/app/api/test-cases/route.ts,
+ * which applies the same clamp to the lean and full projections; the route honours no
+ * offset/page/cursor, so there is no second page to ask for.
+ *
+ * ponytail: if TCM ever clamps BELOW this, a truncated scan would report has_more: false —
+ * the cap is not discoverable from the response. The fix is the server-side `tags` filter
+ * (TCM#114), which removes the scan entirely, not a cleverer guess here.
+ */
 const BACKEND_MAX_ROWS = 200;
 
 const UNTAGGABLE =
-  'TCM returned a projection without tags, so the tags filter cannot be applied. ' +
-  'Retry without `tags`, or upgrade TCM to a build whose /api/test-cases supports tag filtering.';
+  'TCM returned rows without a `tags` field, so the tags filter could not be applied. ' +
+  'This is a projection/response-shape problem, not a missing TCM feature. ' +
+  'Retry without `tags` to list the cases unfiltered.';
 
 export const listTestCasesInputSchema = z
   .object({
@@ -112,12 +121,19 @@ export async function listTestCases(
       return { error: { code: 'SERVER_ERROR', message: UNTAGGABLE } };
     }
     const wanted = new Set(tags.map((t) => t.trim().toLowerCase()));
+    // Rows are guarded, not trusted: the probe above already allows for malformed rows, and
+    // a throw here would escape as a raw MCP -32603 (index.ts rethrows non-SessionExpired
+    // errors), which is exactly what client.ts's "never throws" contract exists to avoid.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const matched = rows.filter((tc: any) =>
-      (tc.tags ?? []).some((t: string) => wanted.has(String(t).trim().toLowerCase())),
+      Array.isArray(tc?.tags) &&
+      tc.tags.some((t: unknown) => wanted.has(String(t).trim().toLowerCase())),
     );
     return {
       items: matched.slice(0, clampedLimit).map(toListItem),
+      // NB: on this path `total` is "matches within the page we scanned", not a server-side
+      // count across the project — it cannot exceed BACKEND_MAX_ROWS. has_more distinguishes
+      // a complete count from a capped one.
       total: matched.length,
       // Truncated either by the caller's limit, or by the single backend page we scanned.
       has_more: matched.length > clampedLimit || rows.length >= BACKEND_MAX_ROWS,

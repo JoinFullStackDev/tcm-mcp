@@ -18,8 +18,8 @@ export function resolveBaseUrl(): string {
 }
 
 /**
- * Server version, reported in the MCP handshake. Kept here so it and package.json
- * cannot drift apart — bump both together at release time.
+ * Server version, reported in the MCP handshake. `npm run check` asserts this equals
+ * package.json's version, so the two cannot drift apart — bump both together.
  *
  * This only ever describes the build the user actually launched; it is deliberately
  * NOT used to build install commands, because the matching `v<VERSION>` tag does not

@@ -3,6 +3,9 @@
  * Run: npm run check   (builds first — the .js specifiers need the compiled output)
  */
 import assert from 'assert';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { VERSION } from '../config.js';
 import { listTestCases } from './list_test_cases.js';
 import type { TcmClient } from '../client.js';
 
@@ -82,6 +85,21 @@ function fake(rows: unknown[], urls: string[] = []): TcmClient {
     {} as never,
   );
   assert('items' in legacy && !('tags' in legacy.items[0]), 'tags omitted, not stamped as []');
+
+  // Malformed rows must not throw — a throw escapes as a raw MCP -32603.
+  const malformed = await listTestCases(
+    fake([{ display_id: 'OK-1', title: 'ok', automation_status: 'not_automated', priority: null, tags: ['smoke'] },
+          null,
+          { display_id: 'BAD-1', tags: 'smoke' },
+          { display_id: 'BAD-2', tags: { a: 1 } }]),
+    { tags: ['smoke'] } as never,
+  );
+  assert('items' in malformed && malformed.items.map((i) => i.display_id).join() === 'OK-1', 'malformed rows skipped, not thrown on');
+
+  // config.VERSION and package.json must agree — the docblock claims they cannot drift,
+  // so enforce it rather than trusting the next release to remember.
+  const pkgVersion = JSON.parse(readFileSync(join(__dirname, '..', '..', 'package.json'), 'utf8')).version;
+  assert.strictEqual(VERSION, pkgVersion, `config.VERSION ${VERSION} != package.json ${pkgVersion}`);
 
   console.log('list_test_cases tag filter: all checks passed');
 })();
